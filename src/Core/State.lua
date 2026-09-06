@@ -7,7 +7,7 @@ local State = {
         FOV = 70,
     },
     World = {
-        FullBrightness = false, NoFog = false, NoLeaves = false,
+        FullBrightness = false, NoFog = false, Vegetation = false,
         NoShadows = false, FPSBoost = false, Sky = "Default",
     },
     Movement = {
