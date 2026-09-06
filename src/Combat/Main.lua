@@ -1,5 +1,14 @@
--- Bot-practice Combat. Only targets Registry.Bots; real Roblox Player characters are
--- excluded by Registry. No metamethod hooks, kick suppression, anti-cheat bypass or evasion.
+-- LvkHub.exe Combat
+--
+-- ============================================================================
+-- BOT PRACTICE ONLY
+-- ============================================================================
+-- This module uses Registry.Bots only. Registry.Bots is hard-gated by the real
+-- Roblox Players service: if any real Player other than LocalPlayer is present,
+-- practice targeting is disabled/emptied and the GunPlugin override falls back
+-- to the game's original aim point. Player-shaped NPC rigs are still valid bots.
+-- No __namecall/metatable hooks, kick suppression, anti-cheat bypass or evasion.
+-- ============================================================================
 
 return function(State, Registry, UI)
     local Players=game:GetService("Players")
@@ -11,27 +20,57 @@ return function(State, Registry, UI)
 
     State.Combat.SelectedBot=nil
 
+    UI.Section(page,"BOT PRACTICE ONLY")
+    local _,guardLabel=UI.Row(page,"Practice guard: checking...")
+    guardLabel.TextColor3=Color3.fromRGB(150,200,255)
+
+    local function allowed()
+        return Registry.PracticeAllowed and Registry.PracticeAllowed() or false
+    end
+
+    local function updateGuardLabel()
+        if allowed() then
+            guardLabel.Text="Practice guard: ACTIVE • real players: 0"
+            guardLabel.TextColor3=Color3.fromRGB(120,220,170)
+        else
+            guardLabel.Text="Practice guard: BLOCKED • real player detected"
+            guardLabel.TextColor3=Color3.fromRGB(255,130,130)
+        end
+    end
+    updateGuardLabel()
+
+    -- If a real Player is already present, target combat is not loaded at all.
+    if not allowed() then return end
+
     UI.Section(page,"Combat")
     local _,targetLabel=UI.Row(page,"Target bot: AUTO")
     targetLabel.TextColor3=Color3.fromRGB(150,200,255)
+
     UI.Button(page,"Target Bot","NEXT",function()
+        if not allowed() then targetLabel.Text="Target bot: BLOCKED"; return end
         local list={}
         for model in pairs(Registry.Bots) do if Registry.IsBot(model) then table.insert(list,model) end end
         table.sort(list,function(a,b) return a.Name<b.Name end)
-        if #list==0 then State.Combat.SelectedBot=nil; targetLabel.Text="Target bot: AUTO"; return end
+        if #list==0 then State.Combat.SelectedBot=nil; targetLabel.Text="Target bot: AUTO • 0 found"; return end
         local idx=table.find(list,State.Combat.SelectedBot) or 0
         State.Combat.SelectedBot=list[idx%#list+1]
         targetLabel.Text="Target bot: "..State.Combat.SelectedBot.Name
     end)
-    UI.Toggle(page,"Aimbot",function() return State.Combat.Aimbot end,function(v) State.Combat.Aimbot=v end)
-    UI.Toggle(page,"Silent Aim",function() return State.Combat.SilentAim end,function(v) State.Combat.SilentAim=v end)
-    UI.Toggle(page,"HitBoxes",function() return State.Combat.HitBoxes end,function(v) State.Combat.HitBoxes=v end)
+
+    local function setGuarded(key,v)
+        State.Combat[key]=(v and allowed()) or false
+    end
+
+    UI.Toggle(page,"Aimbot",function() return State.Combat.Aimbot end,function(v) setGuarded("Aimbot",v) end)
+    UI.Toggle(page,"Silent Aim",function() return State.Combat.SilentAim end,function(v) setGuarded("SilentAim",v) end)
+    UI.Toggle(page,"Magic Bullets",function() return State.Combat.MagicBullets end,function(v) setGuarded("MagicBullets",v) end)
+    UI.Toggle(page,"HitBoxes",function() return State.Combat.HitBoxes end,function(v) setGuarded("HitBoxes",v) end)
     UI.Number(page,"HitBox Size",function() return State.Combat.HitboxSize end,function(v) State.Combat.HitboxSize=v end,2,20)
     UI.Dropdown(page,"Aim Part",{"Head","Torso"},function() return State.Combat.AimPart or "Head" end,function(v) State.Combat.AimPart=v end)
     UI.Toggle(page,"AntiAim",function() return State.Combat.AntiAim end,function(v) State.Combat.AntiAim=v end)
 
     local function targetPart(model)
-        if not model or not Registry.IsBot(model) then return nil end
+        if not allowed() or not model or not Registry.IsBot(model) then return nil end
         if (State.Combat.AimPart or "Head")=="Torso" then
             return model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso") or Registry.RootOf(model)
         end
@@ -44,10 +83,20 @@ return function(State, Registry, UI)
         return Vector2.new(m.X,m.Y)
     end
 
-    local function chooseTarget()
+    local function selectedTarget()
         if State.Combat.SelectedBot and Registry.IsBot(State.Combat.SelectedBot) then
-            return State.Combat.SelectedBot,targetPart(State.Combat.SelectedBot)
+            local p=targetPart(State.Combat.SelectedBot)
+            if p then return State.Combat.SelectedBot,p end
         end
+        return nil
+    end
+
+    -- Aimbot/SilentAim target: nearest bot to mouse/screen center, no stud limit.
+    local function chooseScreenTarget()
+        if not allowed() then return nil end
+        local sm,sp=selectedTarget()
+        if sm and sp then return sm,sp end
+
         local cam=Workspace.CurrentCamera
         if not cam then return nil end
         local ref=referencePoint(cam)
@@ -67,10 +116,33 @@ return function(State, Registry, UI)
         return best,bestPart
     end
 
+    -- Magic Bullets target: selected bot first; otherwise nearest bot in world
+    -- to the local camera. No FOV or distance gate is used.
+    local function chooseWorldTarget()
+        if not allowed() then return nil end
+        local sm,sp=selectedTarget()
+        if sm and sp then return sm,sp end
+
+        local cam=Workspace.CurrentCamera
+        if not cam then return nil end
+        local best,bestPart,bestDist=nil,nil,math.huge
+        for model in pairs(Registry.Bots) do
+            if Registry.IsBot(model) then
+                local p=targetPart(model)
+                if p then
+                    local d=(p.Position-cam.CFrame.Position).Magnitude
+                    if d<bestDist then bestDist=d; best=model; bestPart=p end
+                end
+            end
+        end
+        return best,bestPart
+    end
+
     -- GunTesting local GunPlugin adapter. Direct function replacement only.
     local GunPlugin=nil
     local originalLook=nil
     local installing=false
+
     local function findGunPluginModule()
         local ps=LP:FindFirstChild("PlayerScripts")
         if not ps then return nil end
@@ -83,8 +155,9 @@ return function(State, Registry, UI)
         end
         return nil
     end
+
     local function installGunPlugin()
-        if GunPlugin or installing then return GunPlugin~=nil end
+        if GunPlugin or installing or not allowed() then return GunPlugin~=nil end
         installing=true
         local mod=findGunPluginModule()
         if mod then
@@ -93,9 +166,16 @@ return function(State, Registry, UI)
                 GunPlugin=g
                 originalLook=g.GetWorldLookAtPos
                 g.GetWorldLookAtPos=function(self,...)
-                    if State.Combat.SilentAim then
-                        local _,p=chooseTarget()
-                        if p then return p.Position end
+                    -- Hard runtime guard: a real Player joining immediately makes
+                    -- both target modes fall through to the game's original method.
+                    if allowed() then
+                        if State.Combat.MagicBullets then
+                            local _,p=chooseWorldTarget()
+                            if p then return p.Position end
+                        elseif State.Combat.SilentAim then
+                            local _,p=chooseScreenTarget()
+                            if p then return p.Position end
+                        end
                     end
                     return originalLook(self,...)
                 end
@@ -104,19 +184,43 @@ return function(State, Registry, UI)
         installing=false
         return GunPlugin~=nil
     end
+
     task.spawn(function()
         while UI.Gui.Parent and not GunPlugin do
-            installGunPlugin()
+            if allowed() then installGunPlugin() end
             task.wait(.5)
         end
     end)
 
     local originalSizes=setmetatable({}, {__mode="k"})
     local antiSpin=0
+    local hitboxWas=false
+
+    local function disableTargetCombat()
+        State.Combat.Aimbot=false
+        State.Combat.SilentAim=false
+        State.Combat.MagicBullets=false
+        State.Combat.HitBoxes=false
+        State.Combat.SelectedBot=nil
+        targetLabel.Text="Target bot: BLOCKED"
+        updateGuardLabel()
+    end
+
+    Players.PlayerAdded:Connect(function(p)
+        if p~=LP then disableTargetCombat() end
+    end)
+    Players.PlayerRemoving:Connect(function()
+        task.defer(function()
+            task.wait()
+            updateGuardLabel()
+            if allowed() then targetLabel.Text="Target bot: AUTO" end
+        end)
+    end)
+
     RunService:BindToRenderStep("LvkHubBotAimbot",Enum.RenderPriority.Last.Value+500,function(dt)
         local cam=Workspace.CurrentCamera
-        if State.Combat.Aimbot and cam then
-            local _,p=chooseTarget()
+        if allowed() and State.Combat.Aimbot and cam then
+            local _,p=chooseScreenTarget()
             if p then
                 local wanted=CFrame.lookAt(cam.CFrame.Position,p.Position)
                 cam.CFrame=cam.CFrame:Lerp(wanted,.32)
@@ -132,9 +236,8 @@ return function(State, Registry, UI)
         end
     end)
 
-    local hitboxWas=false
     RunService.Heartbeat:Connect(function()
-        if State.Combat.HitBoxes then
+        if allowed() and State.Combat.HitBoxes then
             for model in pairs(Registry.Bots) do
                 if Registry.IsBot(model) then
                     local p=targetPart(model)
@@ -148,10 +251,13 @@ return function(State, Registry, UI)
             end
         elseif hitboxWas then
             for p,state in pairs(originalSizes) do
-                if p and p.Parent then p.Size=state.Size; p.CanCollide=state.CanCollide end
+                if p and p.Parent then
+                    p.Size=state.Size
+                    p.CanCollide=state.CanCollide
+                end
                 originalSizes[p]=nil
             end
         end
-        hitboxWas=State.Combat.HitBoxes
+        hitboxWas=allowed() and State.Combat.HitBoxes or false
     end)
 end
