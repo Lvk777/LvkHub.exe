@@ -1,12 +1,16 @@
 -- LvkHub.exe Combat
 --
 -- ============================================================================
--- BOT PRACTICE ONLY
+-- TEST PLAYERS / NPC DUMMIES ONLY
 -- ============================================================================
--- This module uses Registry.Bots only. Registry.Bots is hard-gated by the real
--- Roblox Players service: if any real Player other than LocalPlayer is present,
--- practice targeting is disabled/emptied and the GunPlugin override falls back
--- to the game's original aim point. Player-shaped NPC rigs are still valid bots.
+-- Combat consumes Registry.Bots, which is now populated only from
+-- Workspace.TestPlayers. GunTesting NPC rigs from Workspace.Players are mirrored
+-- into TestPlayers as client-side ObjectValue references.
+--
+-- Real Roblox Player.Character models are excluded by Registry and are never
+-- returned by Registry.IsBot(). Real Players joining/leaving the server do not
+-- disable dummy practice; they are simply ignored as target candidates.
+--
 -- No __namecall/metatable hooks, kick suppression, anti-cheat bypass or evasion.
 -- ============================================================================
 
@@ -20,41 +24,42 @@ return function(State, Registry, UI)
 
     State.Combat.SelectedBot=nil
 
-    UI.Section(page,"BOT PRACTICE ONLY")
-    local _,guardLabel=UI.Row(page,"Practice guard: checking...")
-    guardLabel.TextColor3=Color3.fromRGB(150,200,255)
+    UI.Section(page,"TEST PLAYERS / NPC DUMMIES")
+    local _,sourceLabel=UI.Row(page,"Target source: Workspace.TestPlayers")
+    sourceLabel.TextColor3=Color3.fromRGB(150,200,255)
+    local _,countLabel=UI.Row(page,"Test targets: 0")
+    countLabel.TextColor3=Color3.fromRGB(120,220,170)
 
     local function allowed()
         return Registry.PracticeAllowed and Registry.PracticeAllowed() or false
     end
 
-    local function updateGuardLabel()
-        if allowed() then
-            guardLabel.Text="Practice guard: ACTIVE • real players: 0"
-            guardLabel.TextColor3=Color3.fromRGB(120,220,170)
-        else
-            guardLabel.Text="Practice guard: BLOCKED • real player detected"
-            guardLabel.TextColor3=Color3.fromRGB(255,130,130)
-        end
+    local function updateCount()
+        local n=Registry.CountBots and Registry.CountBots() or 0
+        countLabel.Text="Test targets: "..tostring(n).." • real Players excluded"
     end
-    updateGuardLabel()
-
-    -- If a real Player is already present, target combat is not loaded at all.
-    if not allowed() then return end
+    updateCount()
 
     UI.Section(page,"Combat")
-    local _,targetLabel=UI.Row(page,"Target bot: AUTO")
+    local _,targetLabel=UI.Row(page,"Target dummy: AUTO")
     targetLabel.TextColor3=Color3.fromRGB(150,200,255)
 
-    UI.Button(page,"Target Bot","NEXT",function()
-        if not allowed() then targetLabel.Text="Target bot: BLOCKED"; return end
+    UI.Button(page,"Target Dummy","NEXT",function()
+        if Registry.RefreshTargets then Registry.RefreshTargets() end
+        updateCount()
         local list={}
-        for model in pairs(Registry.Bots) do if Registry.IsBot(model) then table.insert(list,model) end end
+        for model in pairs(Registry.Bots) do
+            if Registry.IsBot(model) then table.insert(list,model) end
+        end
         table.sort(list,function(a,b) return a.Name<b.Name end)
-        if #list==0 then State.Combat.SelectedBot=nil; targetLabel.Text="Target bot: AUTO • 0 found"; return end
+        if #list==0 then
+            State.Combat.SelectedBot=nil
+            targetLabel.Text="Target dummy: AUTO • 0 found"
+            return
+        end
         local idx=table.find(list,State.Combat.SelectedBot) or 0
         State.Combat.SelectedBot=list[idx%#list+1]
-        targetLabel.Text="Target bot: "..State.Combat.SelectedBot.Name
+        targetLabel.Text="Target dummy: "..State.Combat.SelectedBot.Name
     end)
 
     local function setGuarded(key,v)
@@ -91,7 +96,6 @@ return function(State, Registry, UI)
         return nil
     end
 
-    -- Aimbot/SilentAim target: nearest bot to mouse/screen center, no stud limit.
     local function chooseScreenTarget()
         if not allowed() then return nil end
         local sm,sp=selectedTarget()
@@ -108,7 +112,11 @@ return function(State, Registry, UI)
                     local s,on=cam:WorldToViewportPoint(p.Position)
                     if on and s.Z>0 then
                         local px=(Vector2.new(s.X,s.Y)-ref).Magnitude
-                        if px<bestPx then bestPx=px; best=model; bestPart=p end
+                        if px<bestPx then
+                            bestPx=px
+                            best=model
+                            bestPart=p
+                        end
                     end
                 end
             end
@@ -116,8 +124,6 @@ return function(State, Registry, UI)
         return best,bestPart
     end
 
-    -- Magic Bullets target: selected bot first; otherwise nearest bot in world
-    -- to the local camera. No FOV or distance gate is used.
     local function chooseWorldTarget()
         if not allowed() then return nil end
         local sm,sp=selectedTarget()
@@ -131,7 +137,11 @@ return function(State, Registry, UI)
                 local p=targetPart(model)
                 if p then
                     local d=(p.Position-cam.CFrame.Position).Magnitude
-                    if d<bestDist then bestDist=d; best=model; bestPart=p end
+                    if d<bestDist then
+                        bestDist=d
+                        best=model
+                        bestPart=p
+                    end
                 end
             end
         end
@@ -166,8 +176,6 @@ return function(State, Registry, UI)
                 GunPlugin=g
                 originalLook=g.GetWorldLookAtPos
                 g.GetWorldLookAtPos=function(self,...)
-                    -- Hard runtime guard: a real Player joining immediately makes
-                    -- both target modes fall through to the game's original method.
                     if allowed() then
                         if State.Combat.MagicBullets then
                             local _,p=chooseWorldTarget()
@@ -195,27 +203,7 @@ return function(State, Registry, UI)
     local originalSizes=setmetatable({}, {__mode="k"})
     local antiSpin=0
     local hitboxWas=false
-
-    local function disableTargetCombat()
-        State.Combat.Aimbot=false
-        State.Combat.SilentAim=false
-        State.Combat.MagicBullets=false
-        State.Combat.HitBoxes=false
-        State.Combat.SelectedBot=nil
-        targetLabel.Text="Target bot: BLOCKED"
-        updateGuardLabel()
-    end
-
-    Players.PlayerAdded:Connect(function(p)
-        if p~=LP then disableTargetCombat() end
-    end)
-    Players.PlayerRemoving:Connect(function()
-        task.defer(function()
-            task.wait()
-            updateGuardLabel()
-            if allowed() then targetLabel.Text="Target bot: AUTO" end
-        end)
-    end)
+    local countTimer=0
 
     RunService:BindToRenderStep("LvkHubBotAimbot",Enum.RenderPriority.Last.Value+500,function(dt)
         local cam=Workspace.CurrentCamera
@@ -232,17 +220,27 @@ return function(State, Registry, UI)
             antiSpin=(antiSpin+dt*3)%(math.pi*2)
             local root=ch:FindFirstChild("HumanoidRootPart")
             local waist=(ch:FindFirstChild("UpperTorso") and ch.UpperTorso:FindFirstChild("Waist")) or (root and root:FindFirstChild("RootJoint"))
-            if waist and waist:IsA("Motor6D") then waist.Transform=CFrame.Angles(0,math.sin(antiSpin)*.25,0) end
+            if waist and waist:IsA("Motor6D") then
+                waist.Transform=CFrame.Angles(0,math.sin(antiSpin)*.25,0)
+            end
         end
     end)
 
-    RunService.Heartbeat:Connect(function()
+    RunService.Heartbeat:Connect(function(dt)
+        countTimer+=dt
+        if countTimer>=1 then
+            countTimer=0
+            updateCount()
+        end
+
         if allowed() and State.Combat.HitBoxes then
             for model in pairs(Registry.Bots) do
                 if Registry.IsBot(model) then
                     local p=targetPart(model)
                     if p and p:IsA("BasePart") then
-                        if originalSizes[p]==nil then originalSizes[p]={Size=p.Size,CanCollide=p.CanCollide} end
+                        if originalSizes[p]==nil then
+                            originalSizes[p]={Size=p.Size,CanCollide=p.CanCollide}
+                        end
                         local n=math.max(2,State.Combat.HitboxSize or 6)
                         p.Size=Vector3.new(n,n,n)
                         p.CanCollide=false
