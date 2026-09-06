@@ -3,15 +3,13 @@
 -- ============================================================================
 -- TEST PLAYERS / NPC DUMMIES ONLY
 -- ============================================================================
--- Combat consumes Registry.Bots, which is now populated only from
--- Workspace.TestPlayers. GunTesting NPC rigs from Workspace.Players are mirrored
--- into TestPlayers as client-side ObjectValue references.
---
+-- Combat consumes Registry.Bots, which is populated only from Workspace.TestPlayers.
 -- Real Roblox Player.Character models are excluded by Registry and are never
--- returned by Registry.IsBot(). Real Players joining/leaving the server do not
--- disable dummy practice; they are simply ignored as target candidates.
+-- returned by Registry.IsBot().
 --
--- No __namecall/metatable hooks, kick suppression, anti-cheat bypass or evasion.
+-- Aimbot, Silent Aim and Magic Bullets all share one Aim FOV gate. A target must
+-- be visible on-screen and inside the configured circle before any of these target
+-- features can use it.
 -- ============================================================================
 
 return function(State, Registry, UI)
@@ -19,10 +17,14 @@ return function(State, Registry, UI)
     local RunService=game:GetService("RunService")
     local UIS=game:GetService("UserInputService")
     local Workspace=game:GetService("Workspace")
+    local CoreGui=game:GetService("CoreGui")
+
     local LP=Players.LocalPlayer
     local page=UI.Pages.Combat
 
     State.Combat.SelectedBot=nil
+    State.Combat.AimFOV=State.Combat.AimFOV or 180
+    if State.Combat.ShowAimFOV==nil then State.Combat.ShowAimFOV=true end
 
     UI.Section(page,"TEST PLAYERS / NPC DUMMIES")
     local _,sourceLabel=UI.Row(page,"Target source: Workspace.TestPlayers")
@@ -39,6 +41,12 @@ return function(State, Registry, UI)
         countLabel.Text="Test targets: "..tostring(n).." • real Players excluded"
     end
     updateCount()
+
+    UI.Section(page,"Aim FOV")
+    UI.Toggle(page,"Show FOV",function() return State.Combat.ShowAimFOV end,function(v) State.Combat.ShowAimFOV=v end)
+    UI.Number(page,"FOV Radius",function() return State.Combat.AimFOV end,function(v)
+        State.Combat.AimFOV=math.clamp(tonumber(v) or 180,20,800)
+    end,20,800)
 
     UI.Section(page,"Combat")
     local _,targetLabel=UI.Row(page,"Target dummy: AUTO")
@@ -74,6 +82,52 @@ return function(State, Registry, UI)
     UI.Dropdown(page,"Aim Part",{"Head","Torso"},function() return State.Combat.AimPart or "Head" end,function(v) State.Combat.AimPart=v end)
     UI.Toggle(page,"AntiAim",function() return State.Combat.AntiAim end,function(v) State.Combat.AntiAim=v end)
 
+    -- ------------------------------------------------------------------------
+    -- FOV DRAWING
+    -- ------------------------------------------------------------------------
+    local guiParent=(gethui and gethui()) or CoreGui
+    local oldFov=guiParent:FindFirstChild("LvkHubAimFOV")
+    if oldFov then pcall(function() oldFov:Destroy() end) end
+
+    local fovGui=Instance.new("ScreenGui")
+    fovGui.Name="LvkHubAimFOV"
+    fovGui.IgnoreGuiInset=true
+    fovGui.ResetOnSpawn=false
+    fovGui.DisplayOrder=995
+    fovGui.Parent=guiParent
+
+    local fovCircle=Instance.new("Frame")
+    fovCircle.Name="Circle"
+    fovCircle.AnchorPoint=Vector2.new(.5,.5)
+    fovCircle.BackgroundTransparency=1
+    fovCircle.BorderSizePixel=0
+    fovCircle.Parent=fovGui
+
+    local corner=Instance.new("UICorner")
+    corner.CornerRadius=UDim.new(1,0)
+    corner.Parent=fovCircle
+
+    local stroke=Instance.new("UIStroke")
+    stroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border
+    stroke.Thickness=1.25
+    stroke.Transparency=.08
+    stroke.Color=Color3.fromRGB(119,120,255)
+    stroke.Parent=fovCircle
+
+    local function fovCenter(cam)
+        return cam and cam.ViewportSize/2 or Vector2.zero
+    end
+
+    local function refreshFovCircle()
+        local cam=Workspace.CurrentCamera
+        if not cam then fovCircle.Visible=false; return end
+        local radius=math.clamp(State.Combat.AimFOV or 180,20,800)
+        local c=fovCenter(cam)
+        fovCircle.Position=UDim2.fromOffset(c.X,c.Y)
+        fovCircle.Size=UDim2.fromOffset(radius*2,radius*2)
+        fovCircle.Visible=State.Combat.ShowAimFOV==true
+    end
+
     local function targetPart(model)
         if not allowed() or not model or not Registry.IsBot(model) then return nil end
         if (State.Combat.AimPart or "Head")=="Torso" then
@@ -82,63 +136,47 @@ return function(State, Registry, UI)
         return model:FindFirstChild("Head") or Registry.RootOf(model)
     end
 
-    local function referencePoint(cam)
-        if UIS.MouseBehavior==Enum.MouseBehavior.LockCenter then return cam.ViewportSize/2 end
-        local m=UIS:GetMouseLocation()
-        return Vector2.new(m.X,m.Y)
+    local function fovScreenDistance(part)
+        local cam=Workspace.CurrentCamera
+        if not cam or not part then return nil end
+        local s,on=cam:WorldToViewportPoint(part.Position)
+        if not on or s.Z<=0 then return nil end
+        local c=fovCenter(cam)
+        local px=(Vector2.new(s.X,s.Y)-c).Magnitude
+        return px,s
     end
 
-    local function selectedTarget()
-        if State.Combat.SelectedBot and Registry.IsBot(State.Combat.SelectedBot) then
-            local p=targetPart(State.Combat.SelectedBot)
-            if p then return State.Combat.SelectedBot,p end
+    local function insideAimFOV(part)
+        local px=fovScreenDistance(part)
+        return px~=nil and px<=math.clamp(State.Combat.AimFOV or 180,20,800)
+    end
+
+    local function selectedTargetInsideFOV()
+        local model=State.Combat.SelectedBot
+        if model and Registry.IsBot(model) then
+            local p=targetPart(model)
+            if p and insideAimFOV(p) then return model,p end
         end
         return nil
     end
 
-    local function chooseScreenTarget()
+    -- Shared selector for Aimbot / Silent Aim / Magic Bullets.
+    -- No minimum/maximum world distance: the only gate is the 2D FOV circle.
+    local function chooseFovTarget()
         if not allowed() then return nil end
-        local sm,sp=selectedTarget()
+
+        local sm,sp=selectedTargetInsideFOV()
         if sm and sp then return sm,sp end
 
-        local cam=Workspace.CurrentCamera
-        if not cam then return nil end
-        local ref=referencePoint(cam)
         local best,bestPart,bestPx=nil,nil,math.huge
+        local radius=math.clamp(State.Combat.AimFOV or 180,20,800)
         for model in pairs(Registry.Bots) do
             if Registry.IsBot(model) then
                 local p=targetPart(model)
                 if p then
-                    local s,on=cam:WorldToViewportPoint(p.Position)
-                    if on and s.Z>0 then
-                        local px=(Vector2.new(s.X,s.Y)-ref).Magnitude
-                        if px<bestPx then
-                            bestPx=px
-                            best=model
-                            bestPart=p
-                        end
-                    end
-                end
-            end
-        end
-        return best,bestPart
-    end
-
-    local function chooseWorldTarget()
-        if not allowed() then return nil end
-        local sm,sp=selectedTarget()
-        if sm and sp then return sm,sp end
-
-        local cam=Workspace.CurrentCamera
-        if not cam then return nil end
-        local best,bestPart,bestDist=nil,nil,math.huge
-        for model in pairs(Registry.Bots) do
-            if Registry.IsBot(model) then
-                local p=targetPart(model)
-                if p then
-                    local d=(p.Position-cam.CFrame.Position).Magnitude
-                    if d<bestDist then
-                        bestDist=d
+                    local px=fovScreenDistance(p)
+                    if px and px<=radius and px<bestPx then
+                        bestPx=px
                         best=model
                         bestPart=p
                     end
@@ -148,7 +186,13 @@ return function(State, Registry, UI)
         return best,bestPart
     end
 
-    -- GunTesting local GunPlugin adapter. Direct function replacement only.
+    -- ------------------------------------------------------------------------
+    -- GunTesting local GunPlugin adapter.
+    -- Silent Aim: camera stays where it is; shot direction is redirected to the
+    -- nearest valid dummy inside the FOV.
+    -- Magic Bullets: same FOV restriction, but takes priority over Silent Aim and
+    -- ignores where the original shot was aimed as long as a valid dummy is inside.
+    -- ------------------------------------------------------------------------
     local GunPlugin=nil
     local originalLook=nil
     local installing=false
@@ -176,14 +220,9 @@ return function(State, Registry, UI)
                 GunPlugin=g
                 originalLook=g.GetWorldLookAtPos
                 g.GetWorldLookAtPos=function(self,...)
-                    if allowed() then
-                        if State.Combat.MagicBullets then
-                            local _,p=chooseWorldTarget()
-                            if p then return p.Position end
-                        elseif State.Combat.SilentAim then
-                            local _,p=chooseScreenTarget()
-                            if p then return p.Position end
-                        end
+                    if allowed() and (State.Combat.MagicBullets or State.Combat.SilentAim) then
+                        local _,p=chooseFovTarget()
+                        if p then return p.Position end
                     end
                     return originalLook(self,...)
                 end
@@ -206,9 +245,11 @@ return function(State, Registry, UI)
     local countTimer=0
 
     RunService:BindToRenderStep("LvkHubBotAimbot",Enum.RenderPriority.Last.Value+500,function(dt)
+        refreshFovCircle()
+
         local cam=Workspace.CurrentCamera
         if allowed() and State.Combat.Aimbot and cam then
-            local _,p=chooseScreenTarget()
+            local _,p=chooseFovTarget()
             if p then
                 local wanted=CFrame.lookAt(cam.CFrame.Position,p.Position)
                 cam.CFrame=cam.CFrame:Lerp(wanted,.32)
