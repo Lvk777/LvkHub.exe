@@ -1,6 +1,6 @@
 -- LvkHub.exe UI shell
--- Rebuilt to mirror Yokai's ClickGui layout: independent draggable category windows,
--- compact dark rows, purple accent, per-window collapse and RightShift visibility.
+-- Yokai-style independent draggable category windows, compact dark rows,
+-- blue/periwinkle accent, per-window collapse and RightShift visibility.
 -- Only the requested categories are created: Combat, Movement, Visuals, Utility, World, Local.
 
 local UIS=game:GetService("UserInputService")
@@ -27,7 +27,7 @@ return function(State)
     main.BorderSizePixel=0
     main.Parent=gui
 
-    local accent=Color3.fromRGB(125,82,235)
+    local accent=Color3.fromRGB(119,120,255)
     local bg=Color3.fromRGB(20,20,20)
     local rowBg=Color3.fromRGB(25,25,25)
     local muted=Color3.fromRGB(162,162,162)
@@ -265,6 +265,7 @@ return function(State)
     function UI.Toggle(page,label,get,set)
         local f,t=UI.Row(page,label)
         t.Size=UDim2.new(1,-48,1,0)
+        t.Active=true
 
         local b=Instance.new("TextButton")
         b.AnchorPoint=Vector2.new(1,.5)
@@ -297,8 +298,12 @@ return function(State)
             set(not get())
             paint()
         end
+
+        -- One input path per clickable area. The previous implementation listened
+        -- on both the child button and its parent row, so one click could fire twice
+        -- and immediately return the state to OFF.
         b.MouseButton1Click:Connect(flip)
-        f.InputBegan:Connect(function(input)
+        t.InputBegan:Connect(function(input)
             if input.UserInputType==Enum.UserInputType.MouseButton1 then flip() end
         end)
         paint()
