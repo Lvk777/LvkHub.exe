@@ -15,8 +15,8 @@ local State = {
         SpeedValue = 32, FlySpeed = 65, CarFlySpeed = 90, MouseTP = false,
     },
     Combat = {
-        Aimbot = false, HitBoxes = false, SilentAim = false, AntiAim = false,
-        AimPart = "Head", HitboxSize = 6,
+        Aimbot = false, HitBoxes = false, SilentAim = false, MagicBullets = false,
+        AntiAim = false, AimPart = "Head", HitboxSize = 6,
     },
     Utility = {
         AntiAFK = false, NoMenuFog = false,
