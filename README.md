@@ -1,20 +1,25 @@
 # LvkHub.exe
 
-Fresh modular Roblox/Luau project built from scratch with a Yokai-inspired layout.
+Trimmed Yokai-style ClickGui build containing only the requested categories and feature set.
 
-## Goals
+## Menu
 
-- One shared target registry for non-player bot rigs under `Workspace > Players`.
-- One shared vehicle registry for `Workspace > Vehicles`.
-- Independent modules for Visuals, World, Movement, Utility and Local.
-- No duplicate `Workspace:GetDescendants()` polling loops.
-- Persistent World overrides use change listeners + slow watchdogs instead of per-frame property spam.
-- Combat adapters are limited to practice bots/NPCs; real `Players` characters are excluded.
+The UI uses independent draggable/collapsible Yokai-style windows rather than a single sidebar frame.
 
-## Planned modules
+Visible categories:
+- Combat
+- Movement
+- Visuals
+- Utility
+- World
+- Local
+
+There is no Render window and no Settings window.
+
+## Features
 
 ### Visuals
-3D Box, Chams, Corner Box, ESP pack, FOV Changer, HealthBar, Name + Distance, Preview, Thermal Corner, Tracers, Skeleton, Car ESP.
+3D Box, Chams, Corner Box, ESP, FOV Changer, HealthBar, Name + Distance, Preview, Thermal Corner, Tracers, Skeleton, Car ESP.
 
 ### World
 ChangeSkyDome, FullBrightness, No Fog, No Leaves, No Shadows, FPS Boost.
@@ -22,13 +27,20 @@ ChangeSkyDome, FullBrightness, No Fog, No Leaves, No Shadows, FPS Boost.
 ### Movement
 CarFly, Fly, Noclip, Speed, Mouse TP.
 
-### Combat (bot practice)
-HitBoxes, AntiAim, Aimbot, Silent Aim adapter.
+### Combat
+HitBoxes, AntiAim, Aimbot and Silent Aim are scoped to the shared non-player practice-bot registry under `Workspace > Players`.
 
 ### Utility
 AntiAFK, NoMenuFog, Rejoin, ServerHop.
 
 ### Local
-HitSound, GunChams, SelfChams, Trail.
+Hitsound, GunChams, SelfChams, Trail, plus the Studio/test-only BringCar helper.
 
-`ClientKickDisable` and anti-cheat bypass/evasion logic are intentionally not part of this codebase.
+## Runtime architecture
+
+- One shared registry for non-player bot rigs under `Workspace > Players`.
+- One shared registry for vehicles under `Workspace > Vehicles`.
+- No duplicate full-workspace polling loops per feature.
+- Persistent World overrides use property-change listeners plus a slow watchdog to avoid visible flicker.
+
+`ClientKickDisable`, anti-cheat bypass, anti-detection and kick suppression are not included.
