@@ -32,6 +32,7 @@ local ok,err=pcall(function()
     loadModule("src/World/Main.lua")(State,Registry,UI)
     loadModule("src/Local/Main.lua")(State,Registry,UI)
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
+    loadModule("src/Core/YokaiPolish.lua")(UI)
 
     shared.LvkHubExe={State=State,Registry=Registry,UI=UI}
 end)
