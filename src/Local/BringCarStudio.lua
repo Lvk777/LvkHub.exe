@@ -1,6 +1,6 @@
 -- BringCar for GunTesting bot-only sessions.
--- Vehicle discovery is intentionally direct from Workspace.Vehicles so it does not
--- depend on the shared registry and never applies a distance filter.
+-- Vehicle discovery is direct from Workspace.Vehicles and has no distance filter.
+-- Driver-seat selection prefers the real VehicleSeat under Functional/Seats.
 
 return function(Registry, UI)
     local Players=game:GetService("Players")
@@ -24,9 +24,7 @@ return function(Registry, UI)
         local list={}
         if not folder then return list end
         for _,m in ipairs(folder:GetChildren()) do
-            if m:IsA("Model") then
-                table.insert(list,m)
-            end
+            if m:IsA("Model") then table.insert(list,m) end
         end
         table.sort(list,function(a,b)
             local an,bn=string.lower(a.Name),string.lower(b.Name)
@@ -61,12 +59,64 @@ return function(Registry, UI)
         return list
     end
 
+    -- GunTesting structure shown in Explorer:
+    -- vehicle > Functional > EntryPoints ... and vehicle > Functional > Seats.
+    -- EntryPoints may reference passenger seats, so do NOT use the first generic Seat.
+    local function findDriverSeat(vehicle)
+        if not vehicle then return nil end
+
+        local functional=vehicle:FindFirstChild("Functional")
+        local seatsFolder=functional and functional:FindFirstChild("Seats")
+
+        -- 1) Explicit driver-named VehicleSeat under Functional/Seats.
+        if seatsFolder then
+            for _,obj in ipairs(seatsFolder:GetDescendants()) do
+                if obj:IsA("VehicleSeat") then
+                    local n=string.lower(obj.Name)
+                    if n:find("driver",1,true) or n:find("drive",1,true) then
+                        return obj
+                    end
+                end
+            end
+
+            -- 2) Any VehicleSeat in the dedicated Seats folder is preferred over
+            -- passenger EntryPoint seats.
+            local vehicleSeat=seatsFolder:FindFirstChildWhichIsA("VehicleSeat",true)
+            if vehicleSeat then return vehicleSeat end
+        end
+
+        -- 3) Explicit driver-named VehicleSeat anywhere in the vehicle.
+        for _,obj in ipairs(vehicle:GetDescendants()) do
+            if obj:IsA("VehicleSeat") then
+                local n=string.lower(obj.Name)
+                if n:find("driver",1,true) or n:find("drive",1,true) then
+                    return obj
+                end
+            end
+        end
+
+        -- 4) Roblox VehicleSeat is the driving seat; prefer it before Seat1 or
+        -- ordinary Seat objects, which can be front/rear passenger seats.
+        local vehicleSeat=vehicle:FindFirstChildWhichIsA("VehicleSeat",true)
+        if vehicleSeat then return vehicleSeat end
+
+        -- Fallbacks only if this vehicle has no VehicleSeat at all.
+        local seat1=vehicle:FindFirstChild("Seat1",true)
+        if seat1 and seat1:IsA("Seat") then return seat1 end
+        return vehicle:FindFirstChildWhichIsA("Seat",true)
+    end
+
     UI.Button(page,"Select vehicle","NEXT",function()
         local list=refreshStatus()
         if #list==0 then return end
         selectedIndex=(selectedIndex%#list)+1
         selected=list[selectedIndex]
-        status.Text=string.format("Vehicle %d/%d: %s",selectedIndex,#list,selected.Name)
+        local seat=findDriverSeat(selected)
+        if seat then
+            status.Text=string.format("Vehicle %d/%d: %s • driver: %s",selectedIndex,#list,selected.Name,seat.Name)
+        else
+            status.Text=string.format("Vehicle %d/%d: %s • driver not found",selectedIndex,#list,selected.Name)
+        end
     end)
 
     UI.Button(page,"Refresh vehicles","REFRESH",function(b)
@@ -75,6 +125,11 @@ return function(Registry, UI)
     end)
 
     UI.Button(page,"Bring selected car","BRING",function(b)
+        -- Keep vehicle manipulation limited to the stated bot-practice use case.
+        if #Players:GetPlayers()>1 then
+            status.Text="BringCar: bot-only session required"
+            return
+        end
 
         local list=refreshStatus()
         if #list==0 then return end
@@ -91,13 +146,9 @@ return function(Registry, UI)
             return
         end
 
-        -- Screenshot-confirmed layout may be vehicle > Decorative > Body > Seat1,
-        -- therefore every seat lookup is recursive.
-        local seat=selected:FindFirstChild("Seat1",true)
-            or selected:FindFirstChildWhichIsA("VehicleSeat",true)
-            or selected:FindFirstChildWhichIsA("Seat",true)
+        local seat=findDriverSeat(selected)
         if not seat or not seat:IsA("BasePart") then
-            status.Text="BringCar: Seat1/seat not found in "..selected.Name
+            status.Text="BringCar: driver VehicleSeat not found in "..selected.Name
             return
         end
 
@@ -122,7 +173,7 @@ return function(Registry, UI)
         task.wait(.35)
         if root.Parent then pcall(function() root.CFrame=old end) end
 
-        status.Text=string.format("Vehicle %d/%d: %s",selectedIndex,#list,selected.Name)
+        status.Text=string.format("Vehicle %d/%d: %s • driver: %s",selectedIndex,#list,selected.Name,seat.Name)
         b.Text="DONE"; task.wait(.5); b.Text="BRING"
     end)
 
