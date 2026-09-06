@@ -1,16 +1,23 @@
 -- LvkHub.exe shared registries
 --
 -- ============================================================================
--- BOT PRACTICE SESSION GUARD
+-- TEST PLAYER TARGET SOURCE (DUMMIES / NPCs ONLY)
 -- ============================================================================
--- Target features (ESP/Aimbot/SilentAim/MagicBullets/HitBoxes) consume Registry.Bots.
--- By default, bot-practice targeting is disabled whenever another REAL Roblox Player
--- is present in Players. This is a session-level guard only.
+-- Combat + Visuals continue to consume Registry.Bots for compatibility, but that
+-- table is now populated ONLY from Workspace.TestPlayers.
 --
--- IMPORTANT: this guard is SEPARATE from the real-player exclusion invariant below.
--- Real Player characters are NEVER inserted into Registry.Bots, even if this session
--- guard is relaxed in the future. That separation keeps the registry stable and avoids
--- accidental Player targeting.
+-- Workspace.TestPlayers can contain:
+--   1) NPC/dummy Models directly, or
+--   2) ObjectValues whose Value points to an NPC/dummy Model elsewhere in Workspace.
+--
+-- For GunTesting, this module creates client-side ObjectValue references for the
+-- non-player rigs found directly under Workspace.Players. This gives the rest of
+-- the hub a Player-style target list without ever using Roblox Player.Character
+-- objects as targets.
+--
+-- HARD SAFETY INVARIANT:
+-- Any Model owned by the Roblox Players service is rejected from Registry.Bots.
+-- This check is independent from folder names and remains active at all times.
 -- ============================================================================
 
 local Players=game:GetService("Players")
@@ -21,6 +28,7 @@ local Registry={
     Bots=setmetatable({}, {__mode="k"}),
     Vehicles=setmetatable({}, {__mode="k"}),
     VehicleFolder=nil,
+    TestPlayersFolder=nil,
     _connections={},
 }
 
@@ -31,15 +39,6 @@ local function disconnectAll(list)
     table.clear(list)
 end
 
--- ============================================================================
--- SESSION-LEVEL BOT PRACTICE GUARD
--- ============================================================================
--- true  = bot targeting is disabled while another real Player is in the session.
--- false = bot targeting may continue while other Players are present, BUT the
---         real-player exclusion invariant below still keeps their characters out.
--- ============================================================================
-local BLOCK_PRACTICE_WHEN_OTHER_REAL_PLAYERS=true
-
 function Registry.HasOtherRealPlayer()
     for _,p in ipairs(Players:GetPlayers()) do
         if p~=LocalPlayer then return true end
@@ -47,16 +46,17 @@ function Registry.HasOtherRealPlayer()
     return false
 end
 
+-- TestPlayers is safe to keep active even when real Players are in the server,
+-- because real Player.Character models are filtered independently below.
 function Registry.PracticeAllowed()
-    if not BLOCK_PRACTICE_WHEN_OTHER_REAL_PLAYERS then return true end
-    return not Registry.HasOtherRealPlayer()
+    return true
 end
 
 -- ============================================================================
 -- REAL-PLAYER EXCLUSION INVARIANT
 -- ============================================================================
--- This is deliberately independent from PracticeAllowed().
--- Any Model actually owned by Roblox Players is rejected from Registry.Bots.
+-- This is the authoritative distinction between a real Roblox Player character
+-- and a player-shaped NPC/dummy. Real Player characters NEVER enter Registry.Bots.
 -- ============================================================================
 local function realPlayerOwned(model)
     if not model or not model:IsA("Model") then return false end
@@ -108,61 +108,108 @@ local function excludedContainer(model)
     return false
 end
 
-local function candidateBot(model)
-    if not Registry.PracticeAllowed() then return false end
+local function validTestTarget(model)
     if not model or not model:IsA("Model") or not model:IsDescendantOf(Workspace) then return false end
-
-    -- Hard invariant: real Player characters never become practice targets.
-    if realPlayerOwned(model) then return false end
-    if excludedContainer(model) then return false end
-
+    if realPlayerOwned(model) or excludedContainer(model) then return false end
     local hum=Registry.HumanoidOf(model)
     local root=Registry.RootOf(model)
-    return hum~=nil and root~=nil
+    return hum~=nil and root~=nil and hum.Health>0
 end
 
 function Registry.IsBot(model)
-    if not candidateBot(model) then return false end
-    local hum=Registry.HumanoidOf(model)
-    return hum and hum.Health>0 or false
+    return validTestTarget(model) and Registry.Bots[model]==true
 end
 
-local function considerModel(model)
-    if candidateBot(model) then
-        Registry.Bots[model]=true
-    else
-        Registry.Bots[model]=nil
+local function ensureTestPlayersFolder()
+    local folder=Workspace:FindFirstChild("TestPlayers")
+    if not folder then
+        folder=Instance.new("Folder")
+        folder.Name="TestPlayers"
+        folder:SetAttribute("LvkHubManagedFolder",true)
+        folder.Parent=Workspace
     end
+    Registry.TestPlayersFolder=folder
+    return folder
 end
 
-local function considerObject(obj)
-    if not Registry.PracticeAllowed() or not obj then return end
+local mirrorBusy=false
+local function sourceBotFolder()
+    local f=Workspace:FindFirstChild("Players")
+    return (f and f:IsA("Folder")) and f or nil
+end
 
-    if obj:IsA("Model") then considerModel(obj) end
+local function syncManagedReferences()
+    if mirrorBusy then return end
+    mirrorBusy=true
 
-    local cur=obj.Parent
-    local depth=0
-    while cur and cur~=Workspace and depth<8 do
-        if cur:IsA("Model") then considerModel(cur) end
-        cur=cur.Parent
-        depth+=1
+    local testFolder=ensureTestPlayersFolder()
+    local source=sourceBotFolder()
+    local wanted=setmetatable({}, {__mode="k"})
+
+    if source then
+        for _,m in ipairs(source:GetChildren()) do
+            if m:IsA("Model") and validTestTarget(m) then
+                wanted[m]=true
+            end
+        end
     end
+
+    local existing=setmetatable({}, {__mode="k"})
+    for _,entry in ipairs(testFolder:GetChildren()) do
+        if entry:IsA("ObjectValue") and entry:GetAttribute("LvkHubManaged")==true then
+            local model=entry.Value
+            if model and wanted[model] and validTestTarget(model) then
+                existing[model]=entry
+                if entry.Name~=model.Name then entry.Name=model.Name end
+            else
+                entry:Destroy()
+            end
+        end
+    end
+
+    for model in pairs(wanted) do
+        if not existing[model] then
+            local ref=Instance.new("ObjectValue")
+            ref.Name=model.Name
+            ref.Value=model
+            ref:SetAttribute("LvkHubManaged",true)
+            ref.Parent=testFolder
+        end
+    end
+
+    mirrorBusy=false
 end
 
-local function rescanBots()
+local function resolveTestEntry(entry)
+    if not entry then return nil end
+    if entry:IsA("Model") then
+        return validTestTarget(entry) and entry or nil
+    end
+    if entry:IsA("ObjectValue") then
+        local model=entry.Value
+        return validTestTarget(model) and model or nil
+    end
+    return nil
+end
+
+local function rebuildTargets()
     table.clear(Registry.Bots)
-    if not Registry.PracticeAllowed() then return end
-
-    for _,obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") then considerModel(obj) end
+    local folder=ensureTestPlayersFolder()
+    for _,entry in ipairs(folder:GetChildren()) do
+        local model=resolveTestEntry(entry)
+        if model then Registry.Bots[model]=true end
     end
+end
+
+function Registry.RefreshTargets()
+    syncManagedReferences()
+    rebuildTargets()
 end
 
 local function rescanVehicles()
     table.clear(Registry.Vehicles)
     local folder=Registry.VehicleFolder
     if not folder then return end
-
     for _,child in ipairs(folder:GetChildren()) do
         if child:IsA("Model") then Registry.Vehicles[child]=true end
     end
@@ -173,27 +220,41 @@ local function attachVehicles(folder)
     rescanVehicles()
 end
 
+local function attachPlayerCharacterRefresh(player)
+    table.insert(Registry._connections,player.CharacterAdded:Connect(function()
+        task.defer(Registry.RefreshTargets)
+    end))
+    table.insert(Registry._connections,player.CharacterRemoving:Connect(function()
+        task.defer(Registry.RefreshTargets)
+    end))
+end
+
 function Registry.Refresh()
     disconnectAll(Registry._connections)
+
     attachVehicles(Workspace:FindFirstChild("Vehicles"))
-    rescanBots()
+    Registry.RefreshTargets()
 
-    table.insert(Registry._connections,Workspace.DescendantAdded:Connect(function(obj)
-        task.defer(function()
-            if Registry.PracticeAllowed() and obj and obj.Parent then considerObject(obj) end
-            if obj and obj.Parent==Registry.VehicleFolder and obj:IsA("Model") then
-                Registry.Vehicles[obj]=true
-            end
-        end)
+    local testFolder=ensureTestPlayersFolder()
+    table.insert(Registry._connections,testFolder.ChildAdded:Connect(function()
+        if not mirrorBusy then task.defer(rebuildTargets) end
+    end))
+    table.insert(Registry._connections,testFolder.ChildRemoved:Connect(function()
+        if not mirrorBusy then task.defer(rebuildTargets) end
     end))
 
-    table.insert(Registry._connections,Workspace.DescendantRemoving:Connect(function(obj)
-        Registry.Bots[obj]=nil
-        Registry.Vehicles[obj]=nil
-    end))
+    local source=sourceBotFolder()
+    if source then
+        table.insert(Registry._connections,source.ChildAdded:Connect(function() task.defer(Registry.RefreshTargets) end))
+        table.insert(Registry._connections,source.ChildRemoved:Connect(function() task.defer(Registry.RefreshTargets) end))
+    end
 
     table.insert(Registry._connections,Workspace.ChildAdded:Connect(function(child)
-        if child.Name=="Vehicles" then attachVehicles(child) end
+        if child.Name=="Vehicles" then
+            attachVehicles(child)
+        elseif child.Name=="Players" or child.Name=="TestPlayers" then
+            task.defer(Registry.Refresh)
+        end
     end))
 
     table.insert(Registry._connections,Workspace.ChildRemoved:Connect(function(child)
@@ -201,35 +262,42 @@ function Registry.Refresh()
             Registry.VehicleFolder=nil
             table.clear(Registry.Vehicles)
         end
-    end))
-
-    table.insert(Registry._connections,Players.PlayerAdded:Connect(function(p)
-        if p~=LocalPlayer and BLOCK_PRACTICE_WHEN_OTHER_REAL_PLAYERS then
-            table.clear(Registry.Bots)
-        else
-            task.defer(rescanBots)
+        if child==Registry.TestPlayersFolder or child.Name=="Players" then
+            task.defer(Registry.Refresh)
         end
     end))
 
-    table.insert(Registry._connections,Players.PlayerRemoving:Connect(function()
-        task.defer(function()
-            task.wait()
-            rescanBots()
-        end)
+    table.insert(Registry._connections,Workspace.DescendantAdded:Connect(function(obj)
+        if obj:IsA("Humanoid") or obj.Name=="HumanoidRootPart" or obj.Name=="Head" then
+            local sourceNow=sourceBotFolder()
+            if sourceNow and obj:IsDescendantOf(sourceNow) then task.defer(Registry.RefreshTargets) end
+        end
+        if obj and obj.Parent==Registry.VehicleFolder and obj:IsA("Model") then
+            Registry.Vehicles[obj]=true
+        end
     end))
+
+    table.insert(Registry._connections,Workspace.DescendantRemoving:Connect(function(obj)
+        Registry.Bots[obj]=nil
+        Registry.Vehicles[obj]=nil
+    end))
+
+    table.insert(Registry._connections,Players.PlayerAdded:Connect(function(p)
+        attachPlayerCharacterRefresh(p)
+        task.defer(Registry.RefreshTargets)
+    end))
+    table.insert(Registry._connections,Players.PlayerRemoving:Connect(function()
+        task.defer(Registry.RefreshTargets)
+    end))
+    for _,p in ipairs(Players:GetPlayers()) do attachPlayerCharacterRefresh(p) end
 end
 
 function Registry.CountBots()
-    if not Registry.PracticeAllowed() then
-        table.clear(Registry.Bots)
-        return 0
-    end
-
     local n=0
     for model in pairs(Registry.Bots) do
-        if not model or not model.Parent or realPlayerOwned(model) then
+        if not validTestTarget(model) then
             Registry.Bots[model]=nil
-        elseif Registry.IsBot(model) then
+        else
             n+=1
         end
     end
