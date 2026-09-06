@@ -7,15 +7,14 @@
 -- Real Roblox Player.Character models are excluded by Registry and are never
 -- returned by Registry.IsBot().
 --
--- Aimbot, Silent Aim and Magic Bullets all share one Aim FOV gate. A target must
--- be visible on-screen and inside the configured circle before any of these target
--- features can use it.
+-- Aimbot, Silent Aim and Magic Bullets share one Aim FOV gate. WallCheck can
+-- additionally require an unobstructed camera-to-target ray. Magic Bullets has a
+-- separate "Magic Through Walls" test mode for local TestPlayers dummies only.
 -- ============================================================================
 
 return function(State, Registry, UI)
     local Players=game:GetService("Players")
     local RunService=game:GetService("RunService")
-    local UIS=game:GetService("UserInputService")
     local Workspace=game:GetService("Workspace")
     local CoreGui=game:GetService("CoreGui")
 
@@ -25,6 +24,8 @@ return function(State, Registry, UI)
     State.Combat.SelectedBot=nil
     State.Combat.AimFOV=State.Combat.AimFOV or 180
     if State.Combat.ShowAimFOV==nil then State.Combat.ShowAimFOV=true end
+    if State.Combat.WallCheck==nil then State.Combat.WallCheck=true end
+    if State.Combat.MagicThroughWalls==nil then State.Combat.MagicThroughWalls=false end
 
     UI.Section(page,"TEST PLAYERS / NPC DUMMIES")
     local _,sourceLabel=UI.Row(page,"Target source: Workspace.TestPlayers")
@@ -47,6 +48,8 @@ return function(State, Registry, UI)
     UI.Number(page,"FOV Radius",function() return State.Combat.AimFOV end,function(v)
         State.Combat.AimFOV=math.clamp(tonumber(v) or 180,20,800)
     end,20,800)
+    UI.Toggle(page,"Wall Check",function() return State.Combat.WallCheck end,function(v) State.Combat.WallCheck=v end)
+    UI.Toggle(page,"Magic Through Walls",function() return State.Combat.MagicThroughWalls end,function(v) State.Combat.MagicThroughWalls=v end)
 
     UI.Section(page,"Combat")
     local _,targetLabel=UI.Row(page,"Target dummy: AUTO")
@@ -146,36 +149,56 @@ return function(State, Registry, UI)
         return px,s
     end
 
-    local function insideAimFOV(part)
-        local px=fovScreenDistance(part)
-        return px~=nil and px<=math.clamp(State.Combat.AimFOV or 180,20,800)
+    local function visibleToCamera(model,part)
+        local cam=Workspace.CurrentCamera
+        if not cam or not model or not part then return false end
+        local origin=cam.CFrame.Position
+        local direction=part.Position-origin
+        if direction.Magnitude<0.05 then return true end
+
+        local params=RaycastParams.new()
+        params.FilterType=Enum.RaycastFilterType.Exclude
+        local exclude={model}
+        if LP.Character then table.insert(exclude,LP.Character) end
+        if cam then table.insert(exclude,cam) end
+        params.FilterDescendantsInstances=exclude
+        params.IgnoreWater=true
+
+        local result=Workspace:Raycast(origin,direction,params)
+        return result==nil
     end
 
-    local function selectedTargetInsideFOV()
+    local function eligible(model,part,requireVisible)
+        local px=fovScreenDistance(part)
+        if not px or px>math.clamp(State.Combat.AimFOV or 180,20,800) then return nil end
+        if requireVisible and not visibleToCamera(model,part) then return nil end
+        return px
+    end
+
+    local function selectedTargetInsideFOV(requireVisible)
         local model=State.Combat.SelectedBot
         if model and Registry.IsBot(model) then
             local p=targetPart(model)
-            if p and insideAimFOV(p) then return model,p end
+            if p and eligible(model,p,requireVisible) then return model,p end
         end
         return nil
     end
 
     -- Shared selector for Aimbot / Silent Aim / Magic Bullets.
-    -- No minimum/maximum world distance: the only gate is the 2D FOV circle.
-    local function chooseFovTarget()
+    -- No minimum/maximum world distance: FOV + optional wall check are the gates.
+    local function chooseFovTarget(requireVisible)
         if not allowed() then return nil end
 
-        local sm,sp=selectedTargetInsideFOV()
+        local sm,sp=selectedTargetInsideFOV(requireVisible)
         if sm and sp then return sm,sp end
 
         local best,bestPart,bestPx=nil,nil,math.huge
-        local radius=math.clamp(State.Combat.AimFOV or 180,20,800)
         for model in pairs(Registry.Bots) do
             if Registry.IsBot(model) then
                 local p=targetPart(model)
                 if p then
-                    local px=fovScreenDistance(p)
-                    if px and px<=radius and px<bestPx then
+                    local px=eligible(model,p,requireVisible)
+                    if px and px<bestPx then
                         bestPx=px
                         best=model
                         bestPart=p
@@ -187,11 +210,9 @@ return function(State, Registry, UI)
     end
 
     -- ------------------------------------------------------------------------
-    -- GunTesting local GunPlugin adapter.
-    -- Silent Aim: camera stays where it is; shot direction is redirected to the
-    -- nearest valid dummy inside the FOV.
-    -- Magic Bullets: same FOV restriction, but takes priority over Silent Aim and
-    -- ignores where the original shot was aimed as long as a valid dummy is inside.
+    -- GunTesting local GunPlugin adapter for TEST DUMMIES ONLY.
+    -- Silent Aim respects Wall Check when enabled.
+    -- Magic Bullets respects Wall Check unless Magic Through Walls is enabled.
     -- ------------------------------------------------------------------------
     local GunPlugin=nil
     local originalLook=nil
@@ -220,9 +241,15 @@ return function(State, Registry, UI)
                 GunPlugin=g
                 originalLook=g.GetWorldLookAtPos
                 g.GetWorldLookAtPos=function(self,...)
-                    if allowed() and (State.Combat.MagicBullets or State.Combat.SilentAim) then
-                        local _,p=chooseFovTarget()
-                        if p then return p.Position end
+                    if allowed() then
+                        if State.Combat.MagicBullets then
+                            local requireVisible=not State.Combat.MagicThroughWalls
+                            local _,p=chooseFovTarget(requireVisible)
+                            if p then return p.Position end
+                        elseif State.Combat.SilentAim then
+                            local _,p=chooseFovTarget(State.Combat.WallCheck==true)
+                            if p then return p.Position end
+                        end
                     end
                     return originalLook(self,...)
                 end
@@ -249,7 +276,7 @@ return function(State, Registry, UI)
 
         local cam=Workspace.CurrentCamera
         if allowed() and State.Combat.Aimbot and cam then
-            local _,p=chooseFovTarget()
+            local _,p=chooseFovTarget(State.Combat.WallCheck==true)
             if p then
                 local wanted=CFrame.lookAt(cam.CFrame.Position,p.Position)
                 cam.CFrame=cam.CFrame:Lerp(wanted,.32)
