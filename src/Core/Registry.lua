@@ -21,22 +21,6 @@ local Registry={
     _connections={},
 }
 
-local function disconnectAll(list)
-    for _,c in ipairs(list) do pcall(function() c:Disconnect() end) end
-    table.clear(list)
-end
-
-function Registry.HasOtherRealPlayer()
-    for _,p in ipairs(Players:GetPlayers()) do
-        if p~=LocalPlayer then return true end
-    end
-    return false
-end
-
-function Registry.PracticeAllowed()
-    return not Registry.HasOtherRealPlayer()
-end
-
 local function realPlayerOwned(model)
     if not model or not model:IsA("Model") then return false end
     local ok,p=pcall(function() return Players:GetPlayerFromCharacter(model) end)
