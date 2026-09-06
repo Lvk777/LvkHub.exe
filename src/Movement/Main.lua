@@ -10,7 +10,9 @@ return function(State, Registry, UI)
 
     UI.Section(page,"Movement")
     UI.Toggle(page,"Fly",function() return State.Movement.Fly end,function(v) State.Movement.Fly=v end)
+    UI.Number(page,"Fly Speed",function() return State.Movement.FlySpeed or 65 end,function(v) State.Movement.FlySpeed=v end,10,300)
     UI.Toggle(page,"CarFly",function() return State.Movement.CarFly end,function(v) State.Movement.CarFly=v end)
+    UI.Number(page,"CarFly Speed",function() return State.Movement.CarFlySpeed or 90 end,function(v) State.Movement.CarFlySpeed=v end,10,400)
     UI.Toggle(page,"Noclip",function() return State.Movement.Noclip end,function(v) State.Movement.Noclip=v end)
     UI.Toggle(page,"Speed",function() return State.Movement.Speed end,function(v) State.Movement.Speed=v end)
     UI.Number(page,"WalkSpeed",function() return State.Movement.SpeedValue end,function(v) State.Movement.SpeedValue=v end,16,120)
@@ -76,7 +78,7 @@ return function(State, Registry, UI)
         end
     end)
 
-    RunService.Heartbeat:Connect(function(dt)
+    RunService.Heartbeat:Connect(function()
         local ch,hum,root=character()
         if hum then
             hum.WalkSpeed=State.Movement.Speed and State.Movement.SpeedValue or 16
@@ -84,9 +86,17 @@ return function(State, Registry, UI)
 
         if ch then
             if State.Movement.Noclip then
-                for _,p in ipairs(ch:GetDescendants()) do if p:IsA("BasePart") then if noclipOriginal[p]==nil then noclipOriginal[p]=p.CanCollide end; p.CanCollide=false end end
+                for _,p in ipairs(ch:GetDescendants()) do
+                    if p:IsA("BasePart") then
+                        if noclipOriginal[p]==nil then noclipOriginal[p]=p.CanCollide end
+                        p.CanCollide=false
+                    end
+                end
             else
-                for p,v in pairs(noclipOriginal) do if p and p.Parent then p.CanCollide=v end; noclipOriginal[p]=nil end
+                for p,v in pairs(noclipOriginal) do
+                    if p and p.Parent then p.CanCollide=v end
+                    noclipOriginal[p]=nil
+                end
             end
         end
 
@@ -94,15 +104,19 @@ return function(State, Registry, UI)
         if State.Movement.Fly and root and hum and cam then
             ensureFly(root)
             local v=moveVector(cam,Enum.KeyCode.Space,Enum.KeyCode.LeftControl)
-            flyVelocity.VectorVelocity=v*65
-            flyOrientation.CFrame=CFrame.lookAt(root.Position,root.Position+Vector3.new(cam.CFrame.LookVector.X,0,cam.CFrame.LookVector.Z))
-        else clearFly() end
+            flyVelocity.VectorVelocity=v*math.max(10,State.Movement.FlySpeed or 65)
+            local flat=Vector3.new(cam.CFrame.LookVector.X,0,cam.CFrame.LookVector.Z)
+            if flat.Magnitude>0 then flyOrientation.CFrame=CFrame.lookAt(root.Position,root.Position+flat.Unit) end
+        else
+            clearFly()
+        end
 
         if State.Movement.CarFly and hum and cam then
-            local model,vroot=seatedVehicle(hum)
-            if model and vroot then
+            local _,vroot=seatedVehicle(hum)
+            if vroot then
                 local dir=moveVector(cam,Enum.KeyCode.E,Enum.KeyCode.Q)
-                if dir.Magnitude>0 then vroot.AssemblyLinearVelocity=dir*90 else vroot.AssemblyLinearVelocity=Vector3.zero end
+                local speed=math.max(10,State.Movement.CarFlySpeed or 90)
+                if dir.Magnitude>0 then vroot.AssemblyLinearVelocity=dir*speed else vroot.AssemblyLinearVelocity=Vector3.zero end
                 local flat=Vector3.new(cam.CFrame.LookVector.X,0,cam.CFrame.LookVector.Z)
                 if flat.Magnitude>0 then vroot.CFrame=CFrame.lookAt(vroot.Position,vroot.Position+flat.Unit) end
             end
