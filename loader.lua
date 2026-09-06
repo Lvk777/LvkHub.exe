@@ -1,4 +1,5 @@
 -- LvkHub.exe loader
+-- Clean Yokai-style build with only the requested categories/features.
 
 if shared.LvkHubExeLoaded then
     local ok,parent=pcall(function() return (gethui and gethui()) or game:GetService("CoreGui") end)
@@ -24,14 +25,13 @@ local ok,err=pcall(function()
     local MakeUI=loadModule("src/UI/Main.lua")
     local UI=MakeUI(State)
 
-    loadModule("src/Visuals/Main.lua")(State,Registry,UI)
-    loadModule("src/World/Main.lua")(State,Registry,UI)
-    loadModule("src/Movement/Main.lua")(State,Registry,UI)
     loadModule("src/Combat/Main.lua")(State,Registry,UI)
+    loadModule("src/Movement/Main.lua")(State,Registry,UI)
+    loadModule("src/Visuals/Main.lua")(State,Registry,UI)
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
+    loadModule("src/World/Main.lua")(State,Registry,UI)
     loadModule("src/Local/Main.lua")(State,Registry,UI)
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
-    loadModule("src/Settings/Main.lua")(State,Registry,UI)
 
     shared.LvkHubExe={State=State,Registry=Registry,UI=UI}
 end)
