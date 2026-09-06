@@ -75,11 +75,6 @@ return function(Registry, UI)
     end)
 
     UI.Button(page,"Bring selected car","BRING",function(b)
-        -- Keep BringCar limited to the stated bot-only use case.
-        if #Players:GetPlayers()>1 then
-            status.Text="BringCar: bot-only session required"
-            return
-        end
 
         local list=refreshStatus()
         if #list==0 then return end
