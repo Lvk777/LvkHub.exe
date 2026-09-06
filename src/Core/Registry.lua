@@ -1,6 +1,6 @@
 -- LvkHub.exe shared registries
 -- Bots: non-player Humanoid rigs anywhere in Workspace. Real Roblox Player characters
--- are always excluded. Vehicles: Models inside Workspace.Vehicles.
+-- and player-named proxy rigs are always excluded. Vehicles: Models inside Workspace.Vehicles.
 
 local Players=game:GetService("Players")
 local Workspace=game:GetService("Workspace")
@@ -21,9 +21,17 @@ local function playerOwned(model)
     if not model or not model:IsA("Model") then return false end
     local ok,plr=pcall(function() return Players:GetPlayerFromCharacter(model) end)
     if ok and plr then return true end
+
+    local modelName=string.lower(model.Name)
+    local hum=model:FindFirstChildOfClass("Humanoid")
+    local displayName=hum and string.lower(hum.DisplayName or "") or ""
     for _,p in ipairs(Players:GetPlayers()) do
         local char=p.Character
         if char and (model==char or model:IsDescendantOf(char) or char:IsDescendantOf(model)) then return true end
+        local pn=string.lower(p.Name)
+        local pd=string.lower(p.DisplayName or "")
+        if modelName==pn or (pd~="" and modelName==pd) then return true end
+        if displayName~="" and (displayName==pn or (pd~="" and displayName==pd)) then return true end
     end
     return false
 end
