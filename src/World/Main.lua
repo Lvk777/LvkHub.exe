@@ -1,9 +1,11 @@
--- Persistent World controls. Vegetation removes Workspace.Map.Vegetation children
--- from the local Workspace while enabled, so Bushes/Trees stop rendering and simulating.
+-- Persistent World controls.
+-- Lighting is enforced late in the render step without PropertyChanged feedback loops.
+-- Vegetation detaches Workspace.Map.Vegetation children locally while enabled.
 
 return function(State, Registry, UI)
     local Lighting=game:GetService("Lighting")
     local Workspace=game:GetService("Workspace")
+    local RunService=game:GetService("RunService")
     local page=UI.Pages.World
 
     UI.Section(page,"World")
@@ -30,44 +32,84 @@ return function(State, Registry, UI)
         FogEnd=Lighting.FogEnd,
         FogColor=Lighting.FogColor,
     }
-    local touching=false
-    local effectOriginal=setmetatable({}, {__mode="k"})
+    local atmosphereOriginal=setmetatable({}, {__mode="k"})
+    local controlledLast=false
+
+    local function setIfDifferent(obj,prop,value)
+        local ok,current=pcall(function() return obj[prop] end)
+        if ok and current~=value then pcall(function() obj[prop]=value end) end
+    end
+
+    local function rememberAtmosphere(a)
+        if atmosphereOriginal[a] then return end
+        atmosphereOriginal[a]={Density=a.Density,Haze=a.Haze,Glare=a.Glare}
+    end
+
+    local function restoreLightingOnce()
+        setIfDifferent(Lighting,"Brightness",original.Brightness)
+        setIfDifferent(Lighting,"ClockTime",original.ClockTime)
+        setIfDifferent(Lighting,"Ambient",original.Ambient)
+        setIfDifferent(Lighting,"OutdoorAmbient",original.OutdoorAmbient)
+        setIfDifferent(Lighting,"GlobalShadows",original.GlobalShadows)
+        setIfDifferent(Lighting,"FogStart",original.FogStart)
+        setIfDifferent(Lighting,"FogEnd",original.FogEnd)
+        setIfDifferent(Lighting,"FogColor",original.FogColor)
+        for a,v in pairs(atmosphereOriginal) do
+            if a and a.Parent then
+                setIfDifferent(a,"Density",v.Density)
+                setIfDifferent(a,"Haze",v.Haze)
+                setIfDifferent(a,"Glare",v.Glare)
+            end
+        end
+    end
 
     local function enforceLighting()
-        if touching then return end
-        touching=true
-        if State.World.FullBrightness then
-            Lighting.Brightness=3
-            Lighting.ClockTime=14
-            Lighting.Ambient=Color3.fromRGB(190,190,190)
-            Lighting.OutdoorAmbient=Color3.fromRGB(190,190,190)
+        local controlled=State.World.FullBrightness or State.World.NoFog or State.World.NoShadows or State.World.Sky~="Default"
+        if not controlled then
+            if controlledLast then restoreLightingOnce() end
+            controlledLast=false
+            return
         end
+        controlledLast=true
+
+        if State.World.FullBrightness then
+            setIfDifferent(Lighting,"Brightness",3)
+            setIfDifferent(Lighting,"Ambient",Color3.fromRGB(190,190,190))
+            setIfDifferent(Lighting,"OutdoorAmbient",Color3.fromRGB(190,190,190))
+        end
+
+        if State.World.Sky=="Bright Day" then
+            setIfDifferent(Lighting,"ClockTime",13)
+        elseif State.World.Sky=="Night" then
+            setIfDifferent(Lighting,"ClockTime",0)
+        elseif State.World.FullBrightness then
+            setIfDifferent(Lighting,"ClockTime",14)
+        end
+
         if State.World.NoFog then
-            Lighting.FogStart=1e7
-            Lighting.FogEnd=1e7+1000
+            setIfDifferent(Lighting,"FogStart",1e7)
+            setIfDifferent(Lighting,"FogEnd",1e7+1000)
             for _,x in ipairs(Lighting:GetChildren()) do
                 if x:IsA("Atmosphere") then
-                    if not effectOriginal[x] then effectOriginal[x]={Density=x.Density,Haze=x.Haze,Glare=x.Glare} end
-                    x.Density=0; x.Haze=0; x.Glare=0
+                    rememberAtmosphere(x)
+                    setIfDifferent(x,"Density",0)
+                    setIfDifferent(x,"Haze",0)
+                    setIfDifferent(x,"Glare",0)
                 end
             end
         end
-        if State.World.NoShadows then Lighting.GlobalShadows=false end
-        if State.World.Sky=="Bright Day" then Lighting.ClockTime=13 elseif State.World.Sky=="Night" then Lighting.ClockTime=0 end
-        touching=false
+
+        if State.World.NoShadows then setIfDifferent(Lighting,"GlobalShadows",false) end
     end
 
-    for _,prop in ipairs({"Brightness","ClockTime","Ambient","OutdoorAmbient","FogStart","FogEnd","GlobalShadows"}) do
-        Lighting:GetPropertyChangedSignal(prop):Connect(function()
-            if State.World.FullBrightness or State.World.NoFog or State.World.NoShadows or State.World.Sky~="Default" then task.defer(enforceLighting) end
-        end)
-    end
-    Lighting.ChildAdded:Connect(function(x)
-        if x:IsA("Atmosphere") and State.World.NoFog then task.defer(enforceLighting) end
+    -- Late render enforcement avoids the previous PropertyChanged -> write ->
+    -- PropertyChanged feedback loop that could freeze/crash the client.
+    pcall(function() RunService:UnbindFromRenderStep("LvkHubWorldLighting") end)
+    RunService:BindToRenderStep("LvkHubWorldLighting",Enum.RenderPriority.Last.Value+900,function()
+        enforceLighting()
     end)
 
-    -- Workspace > Map > Vegetation > Bushes / Trees from the supplied Explorer screenshots.
-    -- We detach direct children instead of permanently Destroying them so the toggle can restore them.
+    -- Workspace > Map > Vegetation > Bushes / Trees.
     local vegetationFolder=nil
     local vegetationStash=setmetatable({}, {__mode="k"})
     local vegetationConn=nil
@@ -125,19 +167,25 @@ return function(State, Registry, UI)
         end
     end)
 
-    local function applyFPS()
+    local effectOriginal=setmetatable({}, {__mode="k"})
+    local function isHubEffect(x)
+        local n=string.lower(x.Name or "")
+        return n:find("lvkhub",1,true)~=nil or n:find("yokaitrail",1,true)~=nil
+    end
+    local function applyFPS(enabled)
         for _,x in ipairs(Workspace:GetDescendants()) do
-            if x:IsA("ParticleEmitter") or x:IsA("Trail") or x:IsA("Beam") or x:IsA("Smoke") or x:IsA("Fire") or x:IsA("Sparkles") then
+            if (x:IsA("ParticleEmitter") or x:IsA("Trail") or x:IsA("Beam") or x:IsA("Smoke") or x:IsA("Fire") or x:IsA("Sparkles")) and not isHubEffect(x) then
                 if effectOriginal[x]==nil then effectOriginal[x]={Enabled=x.Enabled} end
-                x.Enabled=not State.World.FPSBoost
+                if enabled then x.Enabled=false else local o=effectOriginal[x]; if o then x.Enabled=o.Enabled end end
             end
         end
         for _,x in ipairs(Lighting:GetChildren()) do
-            if x:IsA("BloomEffect") or x:IsA("SunRaysEffect") or x:IsA("DepthOfFieldEffect") then
+            if (x:IsA("BloomEffect") or x:IsA("SunRaysEffect") or x:IsA("DepthOfFieldEffect")) and not isHubEffect(x) then
                 if effectOriginal[x]==nil then effectOriginal[x]={Enabled=x.Enabled} end
-                x.Enabled=not State.World.FPSBoost
+                if enabled then x.Enabled=false else local o=effectOriginal[x]; if o then x.Enabled=o.Enabled end end
             end
         end
+        if not enabled then table.clear(effectOriginal) end
     end
 
     attachVegetationFolder(resolveVegetation())
@@ -146,7 +194,6 @@ return function(State, Registry, UI)
         local fpsWas=false
         while UI.Gui.Parent do
             task.wait(.50)
-            enforceLighting()
             if State.World.Vegetation~=vegetationWas then
                 applyVegetation()
                 vegetationWas=State.World.Vegetation
@@ -155,7 +202,10 @@ return function(State, Registry, UI)
                 if current~=vegetationFolder then attachVegetationFolder(current) end
                 if vegetationFolder and #vegetationFolder:GetChildren()>0 then applyVegetation() end
             end
-            if State.World.FPSBoost~=fpsWas then applyFPS(); fpsWas=State.World.FPSBoost end
+            if State.World.FPSBoost~=fpsWas then
+                applyFPS(State.World.FPSBoost)
+                fpsWas=State.World.FPSBoost
+            end
         end
     end)
 end
