@@ -21,19 +21,6 @@ local Registry={
     _connections={},
 }
 
-local function realPlayerOwned(model)
-    if not model or not model:IsA("Model") then return false end
-    local ok,p=pcall(function() return Players:GetPlayerFromCharacter(model) end)
-    if ok and p then return true end
-    for _,plr in ipairs(Players:GetPlayers()) do
-        local ch=plr.Character
-        if ch and (model==ch or model:IsDescendantOf(ch) or ch:IsDescendantOf(model)) then
-            return true
-        end
-    end
-    return false
-end
-
 function Registry.IsRealPlayerCharacter(model)
     return realPlayerOwned(model)
 end
