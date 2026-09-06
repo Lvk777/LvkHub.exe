@@ -1,9 +1,18 @@
 -- LvkHub.exe shared registries
--- Bots: non-player Humanoid rigs anywhere in Workspace. Real Roblox Player characters
--- and player-named proxy rigs are always excluded. Vehicles: Models inside Workspace.Vehicles.
+--
+-- ============================================================================
+-- BOT PRACTICE ONLY GUARD
+-- ============================================================================
+-- Target features (ESP/Aimbot/SilentAim/MagicBullets/HitBoxes) consume Registry.Bots.
+-- Registry.Bots is populated ONLY when LocalPlayer is the only real Roblox Player
+-- in Players. If any other real Player is present, the target registry is cleared
+-- and stays empty. This lets GunTesting player-shaped NPC/bot rigs be recognized
+-- without ever treating another real Player character as a practice target.
+-- ============================================================================
 
 local Players=game:GetService("Players")
 local Workspace=game:GetService("Workspace")
+local LocalPlayer=Players.LocalPlayer
 
 local Registry={
     Bots=setmetatable({}, {__mode="k"}),
@@ -17,27 +26,32 @@ local function disconnectAll(list)
     table.clear(list)
 end
 
-local function playerOwned(model)
-    if not model or not model:IsA("Model") then return false end
-    local ok,plr=pcall(function() return Players:GetPlayerFromCharacter(model) end)
-    if ok and plr then return true end
-
-    local modelName=string.lower(model.Name)
-    local hum=model:FindFirstChildOfClass("Humanoid")
-    local displayName=hum and string.lower(hum.DisplayName or "") or ""
+function Registry.HasOtherRealPlayer()
     for _,p in ipairs(Players:GetPlayers()) do
-        local char=p.Character
-        if char and (model==char or model:IsDescendantOf(char) or char:IsDescendantOf(model)) then return true end
-        local pn=string.lower(p.Name)
-        local pd=string.lower(p.DisplayName or "")
-        if modelName==pn or (pd~="" and modelName==pd) then return true end
-        if displayName~="" and (displayName==pn or (pd~="" and displayName==pd)) then return true end
+        if p~=LocalPlayer then return true end
+    end
+    return false
+end
+
+function Registry.PracticeAllowed()
+    return not Registry.HasOtherRealPlayer()
+end
+
+local function realPlayerOwned(model)
+    if not model or not model:IsA("Model") then return false end
+    local ok,p=pcall(function() return Players:GetPlayerFromCharacter(model) end)
+    if ok and p then return true end
+    for _,plr in ipairs(Players:GetPlayers()) do
+        local ch=plr.Character
+        if ch and (model==ch or model:IsDescendantOf(ch) or ch:IsDescendantOf(model)) then
+            return true
+        end
     end
     return false
 end
 
 function Registry.IsRealPlayerCharacter(model)
-    return playerOwned(model)
+    return realPlayerOwned(model)
 end
 
 function Registry.RootOf(model)
@@ -65,8 +79,12 @@ local function excludedContainer(model)
 end
 
 local function candidateBot(model)
+    -- Hard stop: as soon as a second real Roblox Player exists, no target model
+    -- is eligible, even if it visually looks identical to a GunTesting bot.
+    if not Registry.PracticeAllowed() then return false end
     if not model or not model:IsA("Model") or not model:IsDescendantOf(Workspace) then return false end
-    if playerOwned(model) or excludedContainer(model) then return false end
+    if realPlayerOwned(model) or excludedContainer(model) then return false end
+
     local hum=Registry.HumanoidOf(model)
     local root=Registry.RootOf(model)
     return hum~=nil and root~=nil
@@ -83,7 +101,7 @@ local function considerModel(model)
 end
 
 local function considerObject(obj)
-    if not obj then return end
+    if not Registry.PracticeAllowed() or not obj then return end
     if obj:IsA("Model") then considerModel(obj) end
     local cur=obj.Parent
     local depth=0
@@ -96,6 +114,7 @@ end
 
 local function rescanBots()
     table.clear(Registry.Bots)
+    if not Registry.PracticeAllowed() then return end
     for _,obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") then considerModel(obj) end
     end
@@ -122,7 +141,7 @@ function Registry.Refresh()
 
     table.insert(Registry._connections,Workspace.DescendantAdded:Connect(function(obj)
         task.defer(function()
-            if obj and obj.Parent then considerObject(obj) end
+            if Registry.PracticeAllowed() and obj and obj.Parent then considerObject(obj) end
             if obj and obj.Parent==Registry.VehicleFolder and obj:IsA("Model") then Registry.Vehicles[obj]=true end
         end)
     end))
@@ -136,14 +155,28 @@ function Registry.Refresh()
     table.insert(Registry._connections,Workspace.ChildRemoved:Connect(function(child)
         if child==Registry.VehicleFolder then Registry.VehicleFolder=nil; table.clear(Registry.Vehicles) end
     end))
-    table.insert(Registry._connections,Players.PlayerAdded:Connect(function() task.defer(rescanBots) end))
-    table.insert(Registry._connections,Players.PlayerRemoving:Connect(function() task.defer(rescanBots) end))
+
+    -- A real Player joining immediately clears every practice target. When they
+    -- leave, the bot/player-shaped NPC registry is rebuilt from Workspace.
+    table.insert(Registry._connections,Players.PlayerAdded:Connect(function(p)
+        if p~=LocalPlayer then table.clear(Registry.Bots) end
+    end))
+    table.insert(Registry._connections,Players.PlayerRemoving:Connect(function()
+        task.defer(function()
+            task.wait()
+            rescanBots()
+        end)
+    end))
 end
 
 function Registry.CountBots()
+    if not Registry.PracticeAllowed() then
+        table.clear(Registry.Bots)
+        return 0
+    end
     local n=0
     for model in pairs(Registry.Bots) do
-        if not model or not model.Parent or playerOwned(model) then
+        if not model or not model.Parent or realPlayerOwned(model) then
             Registry.Bots[model]=nil
         elseif Registry.IsBot(model) then
             n+=1
