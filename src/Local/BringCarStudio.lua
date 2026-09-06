@@ -106,6 +106,20 @@ return function(Registry, UI)
         return vehicle:FindFirstChildWhichIsA("Seat",true)
     end
 
+    local function realPlayerInSeat(seat)
+        if not seat then return nil end
+        local ok,occupant=pcall(function() return seat.Occupant end)
+        if not ok or not occupant then return nil end
+        local character=occupant.Parent
+        if not character then return nil end
+        local okPlayer,player=pcall(function() return Players:GetPlayerFromCharacter(character) end)
+        if okPlayer and player then return player end
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p.Character==character then return p end
+        end
+        return nil
+    end
+
     UI.Button(page,"Select vehicle","NEXT",function()
         local list=refreshStatus()
         if #list==0 then return end
@@ -113,7 +127,12 @@ return function(Registry, UI)
         selected=list[selectedIndex]
         local seat=findDriverSeat(selected)
         if seat then
-            status.Text=string.format("Vehicle %d/%d: %s • driver: %s",selectedIndex,#list,selected.Name,seat.Name)
+            local occupiedBy=realPlayerInSeat(seat)
+            if occupiedBy then
+                status.Text=string.format("Vehicle %d/%d: %s • driver occupied",selectedIndex,#list,selected.Name)
+            else
+                status.Text=string.format("Vehicle %d/%d: %s • driver: %s",selectedIndex,#list,selected.Name,seat.Name)
+            end
         else
             status.Text=string.format("Vehicle %d/%d: %s • driver not found",selectedIndex,#list,selected.Name)
         end
@@ -149,6 +168,13 @@ return function(Registry, UI)
         local seat=findDriverSeat(selected)
         if not seat or not seat:IsA("BasePart") then
             status.Text="BringCar: driver VehicleSeat not found in "..selected.Name
+            return
+        end
+
+        -- Do not move a vehicle whose driving seat is occupied by a real Player.
+        local occupiedBy=realPlayerInSeat(seat)
+        if occupiedBy then
+            status.Text="BringCar: driver seat occupied by a real Player"
             return
         end
 
