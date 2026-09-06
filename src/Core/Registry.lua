@@ -1,23 +1,19 @@
 -- LvkHub.exe shared registries
 --
 -- ============================================================================
--- TEST PLAYER TARGET SOURCE (DUMMIES / NPCs ONLY)
+-- WORKSPACE.PLAYERS MIRROR TEST (LOCAL DUMMIES ONLY)
 -- ============================================================================
--- Combat + Visuals continue to consume Registry.Bots for compatibility, but that
--- table is now populated ONLY from Workspace.TestPlayers.
+-- Combat + Visuals consume Registry.Bots for compatibility.
+-- Registry.Bots is populated ONLY from Workspace.TestPlayers.
 --
--- Workspace.TestPlayers can contain:
---   1) NPC/dummy Models directly, or
---   2) ObjectValues whose Value points to an NPC/dummy Model elsewhere in Workspace.
---
--- For GunTesting, this module creates client-side ObjectValue references for the
--- non-player rigs found directly under Workspace.Players. This gives the rest of
--- the hub a Player-style target list without ever using Roblox Player.Character
--- objects as targets.
+-- For diagnostics, every Humanoid rig found directly under Workspace.Players is
+-- CLONED locally into Workspace.TestPlayers. The original Workspace.Players model
+-- is never inserted into Registry.Bots and is never modified by Combat/Visuals.
+-- This lets us test the exact same rig/layout used by Workspace.Players without
+-- targeting the real Player.Character itself.
 --
 -- HARD SAFETY INVARIANT:
--- Any Model owned by the Roblox Players service is rejected from Registry.Bots.
--- This check is independent from folder names and remains active at all times.
+-- Any Model actually owned by Roblox Players is rejected from Registry.Bots.
 -- ============================================================================
 
 local Players=game:GetService("Players")
@@ -46,17 +42,13 @@ function Registry.HasOtherRealPlayer()
     return false
 end
 
--- TestPlayers is safe to keep active even when real Players are in the server,
--- because real Player.Character models are filtered independently below.
+-- Test dummies are local clones, so practice can stay active with real Players present.
 function Registry.PracticeAllowed()
     return true
 end
 
 -- ============================================================================
 -- REAL-PLAYER EXCLUSION INVARIANT
--- ============================================================================
--- This is the authoritative distinction between a real Roblox Player character
--- and a player-shaped NPC/dummy. Real Player characters NEVER enter Registry.Bots.
 -- ============================================================================
 local function realPlayerOwned(model)
     if not model or not model:IsA("Model") then return false end
@@ -108,6 +100,13 @@ local function excludedContainer(model)
     return false
 end
 
+local function rigShapeValid(model)
+    if not model or not model:IsA("Model") then return false end
+    local hum=model:FindFirstChildOfClass("Humanoid")
+    local root=Registry.RootOf(model)
+    return hum~=nil and root~=nil
+end
+
 local function validTestTarget(model)
     if not model or not model:IsA("Model") or not model:IsDescendantOf(Workspace) then return false end
     if realPlayerOwned(model) or excludedContainer(model) then return false end
@@ -132,48 +131,117 @@ local function ensureTestPlayersFolder()
     return folder
 end
 
-local mirrorBusy=false
-local function sourceBotFolder()
+local function sourcePlayerFolder()
     local f=Workspace:FindFirstChild("Players")
-    return (f and f:IsA("Folder")) and f or nil
+    if f and (f:IsA("Folder") or f:IsA("Model")) then return f end
+    return nil
 end
 
-local function syncManagedReferences()
+function Registry.CountWorkspacePlayerRigs()
+    local source=sourcePlayerFolder()
+    if not source then return 0 end
+    local n=0
+    for _,m in ipairs(source:GetChildren()) do
+        if rigShapeValid(m) then n+=1 end
+    end
+    return n
+end
+
+local mirrorBusy=false
+
+local function stripClone(clone)
+    for _,d in ipairs(clone:GetDescendants()) do
+        if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ModuleScript") then
+            d:Destroy()
+        elseif d:IsA("Tool") then
+            d:Destroy()
+        elseif d:IsA("BasePart") then
+            d.Anchored=true
+            d.CanCollide=false
+            d.CanTouch=false
+            d.Massless=true
+        end
+    end
+end
+
+local function testPlacement(index)
+    local ch=LocalPlayer.Character
+    local root=ch and ch:FindFirstChild("HumanoidRootPart")
+    if root then
+        local col=(index-1)%4
+        local row=math.floor((index-1)/4)
+        return root.CFrame*CFrame.new((col-1.5)*6,0,-18-row*7)
+    end
+    return CFrame.new(index*6,10,0)
+end
+
+local function cloneSourceRig(sourceModel,index)
+    local oldArchivable=sourceModel.Archivable
+    sourceModel.Archivable=true
+    local ok,clone=pcall(function() return sourceModel:Clone() end)
+    sourceModel.Archivable=oldArchivable
+    if not ok or not clone then return nil end
+
+    clone.Name="TEST_"..sourceModel.Name
+    clone:SetAttribute("LvkHubManagedDummy",true)
+    clone:SetAttribute("LvkHubSourceName",sourceModel.Name)
+
+    local ref=Instance.new("ObjectValue")
+    ref.Name="SourceCharacter"
+    ref.Value=sourceModel
+    ref:SetAttribute("LvkHubManagedReference",true)
+    ref.Parent=clone
+
+    stripClone(clone)
+    clone.Parent=ensureTestPlayersFolder()
+    pcall(function() clone:PivotTo(testPlacement(index)) end)
+    return clone
+end
+
+local function sourceFromClone(clone)
+    if not clone or not clone:IsA("Model") then return nil end
+    local ref=clone:FindFirstChild("SourceCharacter")
+    if ref and ref:IsA("ObjectValue") then return ref.Value end
+    return nil
+end
+
+local function syncManagedClones()
     if mirrorBusy then return end
     mirrorBusy=true
 
     local testFolder=ensureTestPlayersFolder()
-    local source=sourceBotFolder()
+    local source=sourcePlayerFolder()
     local wanted=setmetatable({}, {__mode="k"})
+    local ordered={}
 
     if source then
         for _,m in ipairs(source:GetChildren()) do
-            if m:IsA("Model") and validTestTarget(m) then
+            if rigShapeValid(m) then
                 wanted[m]=true
+                table.insert(ordered,m)
             end
         end
     end
 
+    table.sort(ordered,function(a,b) return string.lower(a.Name)<string.lower(b.Name) end)
+
     local existing=setmetatable({}, {__mode="k"})
     for _,entry in ipairs(testFolder:GetChildren()) do
-        if entry:IsA("ObjectValue") and entry:GetAttribute("LvkHubManaged")==true then
-            local model=entry.Value
-            if model and wanted[model] and validTestTarget(model) then
-                existing[model]=entry
-                if entry.Name~=model.Name then entry.Name=model.Name end
+        if entry:IsA("Model") and entry:GetAttribute("LvkHubManagedDummy")==true then
+            local src=sourceFromClone(entry)
+            if src and wanted[src] and src.Parent then
+                existing[src]=entry
             else
                 entry:Destroy()
             end
         end
     end
 
-    for model in pairs(wanted) do
-        if not existing[model] then
-            local ref=Instance.new("ObjectValue")
-            ref.Name=model.Name
-            ref.Value=model
-            ref:SetAttribute("LvkHubManaged",true)
-            ref.Parent=testFolder
+    for index,src in ipairs(ordered) do
+        local clone=existing[src]
+        if not clone or not clone.Parent then
+            clone=cloneSourceRig(src,index)
+            existing[src]=clone
         end
     end
 
@@ -202,7 +270,7 @@ local function rebuildTargets()
 end
 
 function Registry.RefreshTargets()
-    syncManagedReferences()
+    syncManagedClones()
     rebuildTargets()
 end
 
@@ -243,7 +311,7 @@ function Registry.Refresh()
         if not mirrorBusy then task.defer(rebuildTargets) end
     end))
 
-    local source=sourceBotFolder()
+    local source=sourcePlayerFolder()
     if source then
         table.insert(Registry._connections,source.ChildAdded:Connect(function() task.defer(Registry.RefreshTargets) end))
         table.insert(Registry._connections,source.ChildRemoved:Connect(function() task.defer(Registry.RefreshTargets) end))
@@ -268,9 +336,9 @@ function Registry.Refresh()
     end))
 
     table.insert(Registry._connections,Workspace.DescendantAdded:Connect(function(obj)
-        if obj:IsA("Humanoid") or obj.Name=="HumanoidRootPart" or obj.Name=="Head" then
-            local sourceNow=sourceBotFolder()
-            if sourceNow and obj:IsDescendantOf(sourceNow) then task.defer(Registry.RefreshTargets) end
+        local sourceNow=sourcePlayerFolder()
+        if sourceNow and obj:IsDescendantOf(sourceNow) and (obj:IsA("Humanoid") or obj.Name=="HumanoidRootPart" or obj.Name=="Head") then
+            task.defer(Registry.RefreshTargets)
         end
         if obj and obj.Parent==Registry.VehicleFolder and obj:IsA("Model") then
             Registry.Vehicles[obj]=true
