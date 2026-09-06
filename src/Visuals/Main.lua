@@ -1,156 +1,466 @@
--- Unified bot/vehicle visuals. Targets only Registry.Bots (non-player rigs) and Registry.Vehicles.
+-- LvkHub.exe Visuals
+-- Faithful port of the old Yokai visual renderer used in AttachedVisualsPreview/VisualsV2.
+-- Intentional changes only:
+--   1) target source is Registry.Bots instead of Roblox Player objects;
+--   2) every artificial min/max ESP distance gate was removed;
+--   3) Skeleton keeps the old style with an R6 fallback;
+--   4) Car ESP keeps the old Yokai style but has no distance filter.
 
 return function(State, Registry, UI)
     local RunService=game:GetService("RunService")
     local Workspace=game:GetService("Workspace")
-    local UIS=game:GetService("UserInputService")
+    local UserInputService=game:GetService("UserInputService")
     local page=UI.Pages.Visuals
     local parent=UI.Gui.Parent
+    local BLUE=Color3.fromRGB(119,120,255)
 
+    -- ---------------------------------------------------------------------
+    -- Options: same requested Yokai set, with no distance controls.
+    -- ---------------------------------------------------------------------
     UI.Section(page,"Visuals")
-    UI.Toggle(page,"ESP Pack",function() return State.Visuals.ESP end,function(v) State.Visuals.ESP=v end)
+    UI.Toggle(page,"3D Box",function() return State.Visuals.Box3D end,function(v) State.Visuals.Box3D=v end)
     UI.Toggle(page,"Chams",function() return State.Visuals.Chams end,function(v) State.Visuals.Chams=v end)
     UI.Toggle(page,"Corner Box",function() return State.Visuals.CornerBox end,function(v) State.Visuals.CornerBox=v end)
-    UI.Toggle(page,"3D Box",function() return State.Visuals.Box3D end,function(v) State.Visuals.Box3D=v end)
+    UI.Toggle(page,"ESP",function() return State.Visuals.ESP end,function(v) State.Visuals.ESP=v end)
+
+    local fovEnabled=false
+    local originalFov=setmetatable({}, {__mode="k"})
+    local function applyFov()
+        local cam=Workspace.CurrentCamera
+        if not cam then return end
+        if originalFov[cam]==nil then originalFov[cam]=cam.FieldOfView end
+        cam.FieldOfView=fovEnabled and math.clamp(State.Visuals.FOV or 70,40,120) or (originalFov[cam] or 70)
+    end
+    UI.Toggle(page,"FOVChanger",function() return fovEnabled end,function(v) fovEnabled=v; applyFov() end)
+    UI.Number(page,"FOV",function() return State.Visuals.FOV or 70 end,function(v) State.Visuals.FOV=v; if fovEnabled then applyFov() end end,40,120)
+    Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function() task.wait(); applyFov() end)
+
     UI.Toggle(page,"HealthBar",function() return State.Visuals.HealthBar end,function(v) State.Visuals.HealthBar=v end)
     UI.Toggle(page,"Name + Distance",function() return State.Visuals.NameDistance end,function(v) State.Visuals.NameDistance=v end)
+    UI.Toggle(page,"Preview",function() return State.Visuals.Preview end,function(v) State.Visuals.Preview=v end)
     UI.Toggle(page,"Thermal Corner",function() return State.Visuals.ThermalCorner end,function(v) State.Visuals.ThermalCorner=v end)
     UI.Toggle(page,"Tracers",function() return State.Visuals.Tracers end,function(v) State.Visuals.Tracers=v end)
     UI.Toggle(page,"Skeleton",function() return State.Visuals.Skeleton end,function(v) State.Visuals.Skeleton=v end)
-    UI.Toggle(page,"Preview",function() return State.Visuals.Preview end,function(v) State.Visuals.Preview=v end)
-    UI.Number(page,"FOV Changer",function() return State.Visuals.FOV end,function(v) State.Visuals.FOV=v end,30,120)
     UI.Toggle(page,"Car ESP",function() return State.Visuals.CarESP end,function(v) State.Visuals.CarESP=v end)
 
-    local _,status=UI.Row(page,"Bots: 0  •  Vehicles: 0")
-    status.TextColor3=Color3.fromRGB(150,200,255)
-
+    -- ---------------------------------------------------------------------
+    -- Old Yokai overlay primitives.
+    -- ---------------------------------------------------------------------
+    local oldOverlay=parent:FindFirstChild("LvkHubVisuals")
+    if oldOverlay then oldOverlay:Destroy() end
     local overlay=Instance.new("ScreenGui")
-    overlay.Name="LvkHubVisuals"; overlay.IgnoreGuiInset=true; overlay.ResetOnSpawn=false; overlay.DisplayOrder=8500; overlay.Parent=parent
+    overlay.Name="LvkHubVisuals"
+    overlay.ResetOnSpawn=false
+    overlay.IgnoreGuiInset=true
+    overlay.DisplayOrder=998
+    overlay.Parent=parent
+
+    local function createLine(color)
+        local f=Instance.new("Frame")
+        f.BorderSizePixel=0
+        f.AnchorPoint=Vector2.new(.5,.5)
+        f.BackgroundColor3=color or Color3.new(1,1,1)
+        f.Visible=false
+        f.Parent=overlay
+        return f
+    end
+    local function setLine(f,a,b,thickness,color)
+        if not f or not a or not b then if f then f.Visible=false end return end
+        local d=b-a
+        if d.Magnitude<.01 then f.Visible=false return end
+        f.Size=UDim2.fromOffset(d.Magnitude,thickness or 1)
+        f.Position=UDim2.fromOffset((a.X+b.X)/2,(a.Y+b.Y)/2)
+        f.Rotation=math.deg(math.atan2(d.Y,d.X))
+        if color then f.BackgroundColor3=color end
+        f.Visible=true
+    end
+    local function hideList(list)
+        if list then for _,x in ipairs(list) do if x then x.Visible=false end end end
+    end
+    local function newCornerSet()
+        local t={}
+        for i=1,8 do t[i]=createLine(Color3.new(1,1,1)) end
+        return t
+    end
+    local function newSkeletonSet()
+        local t={}
+        for i=1,15 do t[i]=createLine(Color3.new(1,1,1)) end
+        return t
+    end
+    local function newBox3DSet()
+        local t={}
+        for i=1,12 do t[i]=createLine(Color3.new(1,1,1)) end
+        return t
+    end
+    local function newLabel()
+        local l=Instance.new("TextLabel")
+        l.BackgroundTransparency=1
+        l.AnchorPoint=Vector2.new(.5,.5)
+        l.Size=UDim2.fromOffset(190,20)
+        l.Font=Enum.Font.Code
+        l.TextSize=11
+        l.TextStrokeTransparency=0
+        l.TextStrokeColor3=Color3.fromRGB(0,0,0)
+        l.TextColor3=Color3.new(1,1,1)
+        l.RichText=true
+        l.Visible=false
+        l.Parent=overlay
+        return l
+    end
+
+    -- Same sizing formula used by the old AttachedVisualsPreview renderer.
+    local function screenData(root)
+        local cam=Workspace.CurrentCamera
+        if not cam or not root then return nil end
+        local p,on=cam:WorldToViewportPoint(root.Position)
+        if not on or p.Z<=0 then return nil end
+        local scale=(root.Size.Y*cam.ViewportSize.Y)/(p.Z*2)
+        return Vector2.new(p.X,p.Y),3*scale,4.5*scale,(cam.CFrame.Position-root.Position).Magnitude/3.5714285714
+    end
 
     local stores=setmetatable({}, {__mode="k"})
-    local carStores=setmetatable({}, {__mode="k"})
+    local function newStore(model)
+        local s={Model=model}
+        s.Chams=Instance.new("Highlight")
+        s.Chams.Name="AttachedChams"
+        s.Chams.FillTransparency=1
+        s.Chams.OutlineTransparency=0
+        s.Chams.OutlineColor=BLUE
+        s.Chams.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+        s.Chams.Adornee=model
+        s.Chams.Enabled=false
+        s.Chams.Parent=model
 
-    local function line()
-        local f=Instance.new("Frame"); f.AnchorPoint=Vector2.new(.5,.5); f.BorderSizePixel=0; f.Visible=false; f.BackgroundColor3=Color3.new(1,1,1); f.Parent=overlay; return f
-    end
-    local function setLine(f,a,b,thick,color,trans)
-        local d=b-a; if d.Magnitude<.1 then f.Visible=false return end
-        f.Size=UDim2.fromOffset(d.Magnitude,thick or 1); f.Position=UDim2.fromOffset((a.X+b.X)/2,(a.Y+b.Y)/2); f.Rotation=math.deg(math.atan2(d.Y,d.X)); f.BackgroundColor3=color or Color3.new(1,1,1); f.BackgroundTransparency=trans or 0; f.Visible=true
-    end
-    local function hideLines(list) for _,x in ipairs(list or {}) do x.Visible=false end end
+        s.CornerFill=Instance.new("Frame")
+        s.CornerFill.BorderSizePixel=0
+        s.CornerFill.BackgroundColor3=Color3.fromRGB(0,0,0)
+        s.CornerFill.BackgroundTransparency=.75
+        s.CornerFill.Visible=false
+        s.CornerFill.Parent=overlay
+        s.Corner=newCornerSet()
 
-    local function createStore(model)
-        local s={}
-        s.highlight=Instance.new("Highlight"); s.highlight.Name="LvkHubChams"; s.highlight.Adornee=model; s.highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; s.highlight.Enabled=false; s.highlight.Parent=model
-        s.corner={}; for i=1,8 do s.corner[i]=line() end
-        s.thermal={}; for i=1,8 do s.thermal[i]=line() end
-        s.box3d={}; for i=1,12 do s.box3d[i]=line() end
-        s.skel={}; for i=1,14 do s.skel[i]=line() end
-        s.tracer=line()
-        s.name=Instance.new("TextLabel"); s.name.BackgroundTransparency=1; s.name.Size=UDim2.fromOffset(250,18); s.name.Font=Enum.Font.Code; s.name.TextSize=11; s.name.TextColor3=Color3.new(1,1,1); s.name.TextStrokeTransparency=0; s.name.Visible=false; s.name.Parent=overlay
-        s.hb=Instance.new("Frame"); s.hb.BorderSizePixel=0; s.hb.BackgroundColor3=Color3.new(0,0,0); s.hb.Visible=false; s.hb.Parent=overlay
-        s.hp=Instance.new("Frame"); s.hp.BorderSizePixel=0; s.hp.Visible=false; s.hp.Parent=overlay
-        stores[model]=s; return s
+        s.ThermalFill=Instance.new("Frame")
+        s.ThermalFill.BorderSizePixel=0
+        s.ThermalFill.BackgroundColor3=BLUE
+        s.ThermalFill.BackgroundTransparency=.75
+        s.ThermalFill.Visible=false
+        s.ThermalFill.Parent=overlay
+        s.ThermalCorner=newCornerSet()
+
+        s.HealthBack=Instance.new("Frame")
+        s.HealthBack.BorderSizePixel=0
+        s.HealthBack.BackgroundColor3=Color3.fromRGB(0,0,0)
+        s.HealthBack.Visible=false
+        s.HealthBack.Parent=overlay
+        s.Health=Instance.new("Frame")
+        s.Health.BorderSizePixel=0
+        s.Health.BackgroundColor3=Color3.fromRGB(255,255,255)
+        s.Health.Visible=false
+        s.Health.Parent=overlay
+        local grad=Instance.new("UIGradient")
+        grad.Rotation=-90
+        grad.Color=ColorSequence.new({
+            ColorSequenceKeypoint.new(0,Color3.fromRGB(200,0,0)),
+            ColorSequenceKeypoint.new(.5,Color3.fromRGB(60,60,125)),
+            ColorSequenceKeypoint.new(1,BLUE),
+        })
+        grad.Parent=s.Health
+        s.HealthText=newLabel()
+        s.Name=newLabel()
+        s.Distance=newLabel()
+        s.Skeleton=newSkeletonSet()
+        s.Tracer=createLine(Color3.fromRGB(255,255,255))
+        s.Box3D=newBox3DSet()
+
+        -- Old ESP Pack objects.
+        s.PackChams=s.Chams:Clone()
+        s.PackChams.Name="AttachedESPPackChams"
+        s.PackChams.Adornee=model
+        s.PackChams.Parent=model
+        s.PackBox=Instance.new("Frame")
+        s.PackBox.BorderSizePixel=1
+        s.PackBox.BorderColor3=Color3.fromRGB(255,255,255)
+        s.PackBox.BackgroundColor3=Color3.fromRGB(255,255,255)
+        s.PackBox.BackgroundTransparency=.75
+        s.PackBox.Visible=false
+        s.PackBox.Parent=overlay
+        local pg=Instance.new("UIGradient")
+        pg.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,BLUE),ColorSequenceKeypoint.new(1,Color3.fromRGB(0,0,0))})
+        pg.Parent=s.PackBox
+        s.PackCorners=newCornerSet()
+        s.PackHealthBack=s.HealthBack:Clone(); s.PackHealthBack.Parent=overlay
+        s.PackHealth=s.Health:Clone(); s.PackHealth.Parent=overlay
+        s.PackHealthText=s.HealthText:Clone(); s.PackHealthText.Parent=overlay
+        s.PackName=s.Name:Clone(); s.PackName.Parent=overlay
+        s.PackDistance=s.Distance:Clone(); s.PackDistance.Parent=overlay
+        s.PackWeapon=s.HealthText:Clone(); s.PackWeapon.TextColor3=BLUE; s.PackWeapon.Parent=overlay
+
+        stores[model]=s
+        return s
     end
     local function hideStore(s)
-        s.highlight.Enabled=false; s.name.Visible=false; s.hb.Visible=false; s.hp.Visible=false; s.tracer.Visible=false; hideLines(s.corner); hideLines(s.thermal); hideLines(s.box3d); hideLines(s.skel)
+        if not s then return end
+        s.Chams.Enabled=false; s.PackChams.Enabled=false
+        s.CornerFill.Visible=false; s.ThermalFill.Visible=false
+        s.Health.Visible=false; s.HealthBack.Visible=false; s.HealthText.Visible=false
+        s.Name.Visible=false; s.Distance.Visible=false; s.Tracer.Visible=false
+        s.PackBox.Visible=false; s.PackHealth.Visible=false; s.PackHealthBack.Visible=false
+        s.PackHealthText.Visible=false; s.PackName.Visible=false; s.PackDistance.Visible=false; s.PackWeapon.Visible=false
+        hideList(s.Corner); hideList(s.ThermalCorner); hideList(s.Skeleton); hideList(s.Box3D); hideList(s.PackCorners)
     end
-    local function destroyStore(m)
-        local s=stores[m]; if not s then return end
-        for _,v in pairs(s) do if typeof(v)=="Instance" then pcall(function() v:Destroy() end) elseif type(v)=="table" then for _,x in ipairs(v) do pcall(function() x:Destroy() end) end end end
-        stores[m]=nil
-    end
-
-    local function bounds(model,cam)
-        local ok,cf,size=pcall(function() return model:GetBoundingBox() end); if not ok then return nil end
-        local minX,minY,maxX,maxY=math.huge,math.huge,-math.huge,-math.huge; local any=false
-        for x=-1,1,2 do for y=-1,1,2 do for z=-1,1,2 do
-            local p=cam:WorldToViewportPoint((cf*CFrame.new(size.X*x/2,size.Y*y/2,size.Z*z/2)).Position)
-            if p.Z>0 then any=true; minX=math.min(minX,p.X); minY=math.min(minY,p.Y); maxX=math.max(maxX,p.X); maxY=math.max(maxY,p.Y) end
-        end end end
-        if not any then return nil end
-        return Vector2.new(minX,minY),Vector2.new(maxX,maxY)
-    end
-    local function corners(lines,tl,br,color)
-        local l,t,r,b=tl.X,tl.Y,br.X,br.Y; local w,h=r-l,b-t; local cw,ch=math.max(6,w*.2),math.max(6,h*.2)
-        local seg={{Vector2.new(l,t),Vector2.new(l+cw,t)},{Vector2.new(l,t),Vector2.new(l,t+ch)},{Vector2.new(r,t),Vector2.new(r-cw,t)},{Vector2.new(r,t),Vector2.new(r,t+ch)},{Vector2.new(l,b),Vector2.new(l+cw,b)},{Vector2.new(l,b),Vector2.new(l,b-ch)},{Vector2.new(r,b),Vector2.new(r-cw,b)},{Vector2.new(r,b),Vector2.new(r,b-ch)}}
-        for i,v in ipairs(seg) do setLine(lines[i],v[1],v[2],1,color) end
+    local function destroyStore(model)
+        local s=stores[model]
+        if not s then return end
+        for _,v in pairs(s) do
+            if typeof(v)=="Instance" then pcall(function() v:Destroy() end)
+            elseif type(v)=="table" then for _,x in pairs(v) do if typeof(x)=="Instance" then pcall(function() x:Destroy() end) end end end
+        end
+        stores[model]=nil
     end
 
-    local r15={{"Head","UpperTorso"},{"UpperTorso","LowerTorso"},{"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},{"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},{"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},{"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"}}
-    local r6={{"Head","Torso"},{"Torso","Left Arm"},{"Torso","Right Arm"},{"Torso","Left Leg"},{"Torso","Right Leg"}}
-    local function skeleton(lines,model,cam,color)
-        hideLines(lines)
-        local bones=model:FindFirstChild("UpperTorso") and r15 or r6
-        for i,pair in ipairs(bones) do
-            local a,b=model:FindFirstChild(pair[1]),model:FindFirstChild(pair[2]); local f=lines[i]
-            if a and b and f then
-                local pa,ona=cam:WorldToViewportPoint(a.Position); local pb,onb=cam:WorldToViewportPoint(b.Position)
-                if ona and onb and pa.Z>0 and pb.Z>0 then setLine(f,Vector2.new(pa.X,pa.Y),Vector2.new(pb.X,pb.Y),1,color) end
+    local function updateCorners(lines,pos,w,h,color)
+        local l,r,t,b=pos.X-w/2,pos.X+w/2,pos.Y-h/2,pos.Y+h/2
+        local cw,ch=w/5,h/5
+        local p={
+            {Vector2.new(l,t),Vector2.new(l+cw,t)},{Vector2.new(l,t),Vector2.new(l,t+ch)},
+            {Vector2.new(r,t),Vector2.new(r-cw,t)},{Vector2.new(r,t),Vector2.new(r,t+ch)},
+            {Vector2.new(l,b),Vector2.new(l+cw,b)},{Vector2.new(l,b),Vector2.new(l,b-ch)},
+            {Vector2.new(r,b),Vector2.new(r-cw,b)},{Vector2.new(r,b),Vector2.new(r,b-ch)},
+        }
+        for i,v in ipairs(p) do setLine(lines[i],v[1],v[2],1,color) end
+    end
+
+    local bonesR15={
+        {"Head","UpperTorso"},{"UpperTorso","LowerTorso"},
+        {"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},
+        {"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},
+        {"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},
+        {"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"},
+    }
+    local bonesR6={{"Head","Torso"},{"Torso","Left Arm"},{"Torso","Right Arm"},{"Torso","Left Leg"},{"Torso","Right Leg"}}
+    local function updateSkeleton(lines,model,color)
+        local cam=Workspace.CurrentCamera
+        if not cam then hideList(lines) return end
+        hideList(lines)
+        local bones=model:FindFirstChild("UpperTorso") and bonesR15 or bonesR6
+        for i,b in ipairs(bones) do
+            local p1,p2=model:FindFirstChild(b[1]),model:FindFirstChild(b[2])
+            local line=lines[i]
+            if p1 and p2 and line then
+                local a,va=cam:WorldToViewportPoint(p1.Position)
+                local c,vc=cam:WorldToViewportPoint(p2.Position)
+                if va and vc and a.Z>0 and c.Z>0 then
+                    setLine(line,Vector2.new(a.X,a.Y),Vector2.new(c.X,c.Y),1,color)
+                end
             end
         end
     end
-    local function box3d(lines,root,cam,color)
-        hideLines(lines); if not root then return end
-        local cf=root.CFrame*CFrame.new(0,-.5,0); local sz=Vector3.new(3,5,3)/2; local pts={}
-        for x=-1,1,2 do for y=-1,1,2 do for z=-1,1,2 do table.insert(pts,(cf*CFrame.new(sz*Vector3.new(x,y,z))).Position) end end end
-        local s={}; for i,p in ipairs(pts) do local q,on=cam:WorldToViewportPoint(p); if not on or q.Z<=0 then return end; s[i]=Vector2.new(q.X,q.Y) end
-        local e={{1,2},{2,4},{4,3},{3,1},{5,6},{6,8},{8,7},{7,5},{1,5},{2,6},{3,7},{4,8}}
-        for i,v in ipairs(e) do setLine(lines[i],s[v[1]],s[v[2]],1,color) end
+
+    local function update3D(lines,root,color)
+        local cam=Workspace.CurrentCamera
+        if not cam or not root then hideList(lines) return end
+        local cf=root.CFrame*CFrame.new(0,-.5,0)
+        local sz=Vector3.new(3,5,3)/2
+        local corners={}
+        for x=-1,1,2 do for y=-1,1,2 do for z=-1,1,2 do table.insert(corners,(cf*CFrame.new(sz*Vector3.new(x,y,z))).Position) end end end
+        local screen={}; local all=true
+        for i,p in ipairs(corners) do
+            local s,v=cam:WorldToViewportPoint(p)
+            screen[i]=Vector2.new(s.X,s.Y)
+            if not v or s.Z<=0 then all=false end
+        end
+        local edges={{1,2},{2,4},{4,3},{3,1},{5,6},{6,8},{8,7},{7,5},{1,5},{2,6},{3,7},{4,8}}
+        if not all then hideList(lines) return end
+        for i,e in ipairs(edges) do setLine(lines[i],screen[e[1]],screen[e[2]],1,color) end
     end
 
-    local preview=Instance.new("Frame")
-    preview.Size=UDim2.fromOffset(150,220); preview.Position=UDim2.new(1,-170,.5,-110); preview.BackgroundTransparency=.8; preview.BackgroundColor3=Color3.fromRGB(20,20,28); preview.BorderSizePixel=0; preview.Visible=false; preview.Parent=overlay
-    Instance.new("UICorner", preview).CornerRadius=UDim.new(0,8)
-    local pst=Instance.new("UIStroke", preview); pst.Color=Color3.fromRGB(125,82,235); pst.Thickness=2
-    local ptxt=Instance.new("TextLabel"); ptxt.BackgroundTransparency=1; ptxt.Size=UDim2.fromScale(1,1); ptxt.Font=Enum.Font.GothamBold; ptxt.TextSize=13; ptxt.TextColor3=Color3.new(1,1,1); ptxt.Text="ESP PREVIEW"; ptxt.Parent=preview
-
-    local function vehicleRoot(model)
-        if not model then return nil end
-        local seat=model:FindFirstChild("Seat1",true) or model:FindFirstChildWhichIsA("VehicleSeat",true)
-        return seat or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart",true)
-    end
-    local function makeCar(model)
-        local hi=Instance.new("Highlight"); hi.Name="LvkHubCarESP"; hi.Adornee=model; hi.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; hi.FillTransparency=.82; hi.OutlineTransparency=.05; hi.FillColor=Color3.fromRGB(60,220,180); hi.OutlineColor=Color3.fromRGB(60,220,180); hi.Enabled=false; hi.Parent=model
-        local root=vehicleRoot(model)
-        local bb=nil
-        if root then bb=Instance.new("BillboardGui"); bb.Adornee=root; bb.AlwaysOnTop=true; bb.Size=UDim2.fromOffset(220,24); bb.StudsOffsetWorldSpace=Vector3.new(0,3,0); bb.Parent=root; local t=Instance.new("TextLabel"); t.BackgroundTransparency=1; t.Size=UDim2.fromScale(1,1); t.Font=Enum.Font.Code; t.TextSize=11; t.TextColor3=Color3.fromRGB(80,240,190); t.TextStrokeTransparency=.2; t.Parent=bb end
-        local s={hi=hi,bb=bb}; carStores[model]=s; return s
+    local function updateHealth(bar,back,text,hum,pos,w,h,width,textColor,showText)
+        local ratio=math.clamp(hum.Health/math.max(1,hum.MaxHealth),0,1)
+        back.Position=UDim2.fromOffset(pos.X-w/2-6,pos.Y-h/2)
+        back.Size=UDim2.fromOffset(width,h); back.Visible=true
+        bar.Position=UDim2.fromOffset(pos.X-w/2-6,pos.Y-h/2+h*(1-ratio))
+        bar.Size=UDim2.fromOffset(width,h*ratio); bar.Visible=true
+        text.Position=UDim2.fromOffset(pos.X-w/2-15,pos.Y-h/2+h*(1-ratio))
+        text.Text=tostring(math.floor(ratio*100)); text.TextColor3=textColor
+        text.Visible=showText and hum.Health<hum.MaxHealth
     end
 
+    -- ---------------------------------------------------------------------
+    -- Preview: port of the old VisualsPreviewControlsFix window.
+    -- ---------------------------------------------------------------------
+    local previewGui=Instance.new("ScreenGui")
+    previewGui.Name="LvkHubVisualPreview"
+    previewGui.ResetOnSpawn=false
+    previewGui.IgnoreGuiInset=true
+    previewGui.DisplayOrder=997
+    previewGui.Enabled=false
+    previewGui.Parent=parent
+
+    local previewFrame=Instance.new("Frame")
+    previewFrame.Name="Window"
+    previewFrame.Size=UDim2.fromOffset(280,360)
+    previewFrame.Position=UDim2.new(1,-300,0,72)
+    previewFrame.BackgroundColor3=Color3.fromRGB(15,15,18)
+    previewFrame.BorderSizePixel=0
+    previewFrame.Parent=previewGui
+    local pfc=Instance.new("UICorner"); pfc.CornerRadius=UDim.new(0,9); pfc.Parent=previewFrame
+    local pfs=Instance.new("UIStroke"); pfs.Color=Color3.fromRGB(62,64,72); pfs.Transparency=.25; pfs.Parent=previewFrame
+    local ptitle=Instance.new("TextLabel")
+    ptitle.BackgroundTransparency=1; ptitle.Position=UDim2.fromOffset(14,8); ptitle.Size=UDim2.new(1,-28,0,25)
+    ptitle.Font=Enum.Font.Code; ptitle.TextSize=13; ptitle.TextColor3=Color3.fromRGB(235,235,240); ptitle.TextXAlignment=Enum.TextXAlignment.Left; ptitle.Text="Visuals Preview"; ptitle.Parent=previewFrame
+    local pcanvas=Instance.new("Frame")
+    pcanvas.Position=UDim2.fromOffset(12,38); pcanvas.Size=UDim2.new(1,-24,1,-50); pcanvas.BackgroundColor3=Color3.fromRGB(20,20,24); pcanvas.BorderSizePixel=0; pcanvas.ClipsDescendants=true; pcanvas.Parent=previewFrame
+    local pcc=Instance.new("UICorner"); pcc.CornerRadius=UDim.new(0,6); pcc.Parent=pcanvas
+    local pdummy=Instance.new("Frame")
+    pdummy.AnchorPoint=Vector2.new(.5,.5); pdummy.Position=UDim2.new(.5,0,.53,0); pdummy.Size=UDim2.fromOffset(66,174); pdummy.BackgroundColor3=BLUE; pdummy.BackgroundTransparency=.16; pdummy.BorderSizePixel=0; pdummy.Parent=pcanvas
+    local pdc=Instance.new("UICorner"); pdc.CornerRadius=UDim.new(0,5); pdc.Parent=pdummy
+    local pout=Instance.new("UIStroke"); pout.Thickness=2; pout.Color=BLUE; pout.Parent=pdummy
+    local phead=Instance.new("Frame")
+    phead.AnchorPoint=Vector2.new(.5,.5); phead.Position=UDim2.new(.5,0,0,-25); phead.Size=UDim2.fromOffset(36,36); phead.BackgroundColor3=BLUE; phead.BackgroundTransparency=.16; phead.BorderSizePixel=0; phead.Parent=pdummy
+    local phc=Instance.new("UICorner"); phc.CornerRadius=UDim.new(0,5); phc.Parent=phead
+    local pho=Instance.new("UIStroke"); pho.Thickness=2; pho.Color=BLUE; pho.Parent=phead
+    local ptracer=Instance.new("Frame")
+    ptracer.AnchorPoint=Vector2.new(.5,.5); ptracer.BorderSizePixel=0; ptracer.BackgroundColor3=Color3.new(1,1,1); ptracer.Visible=false; ptracer.Parent=pcanvas
+    local pdrag=false; local dragStart; local frameStart
+    ptitle.Active=true
+    ptitle.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 then pdrag=true; dragStart=input.Position; frameStart=previewFrame.Position end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if pdrag and input.UserInputType==Enum.UserInputType.MouseMovement then
+            local d=input.Position-dragStart
+            previewFrame.Position=UDim2.new(frameStart.X.Scale,frameStart.X.Offset+d.X,frameStart.Y.Scale,frameStart.Y.Offset+d.Y)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType==Enum.UserInputType.MouseButton1 then pdrag=false end end)
+
+    -- ---------------------------------------------------------------------
+    -- Old Yokai Car ESP style, event-driven and with NO distance gate.
+    -- ---------------------------------------------------------------------
+    local carColor=Color3.fromRGB(60,220,180)
+    local cars=setmetatable({}, {__mode="k"})
+    local function vehicleAnchor(m)
+        return m:FindFirstChildWhichIsA("VehicleSeat",true)
+            or m:FindFirstChild("Seat1",true)
+            or m.PrimaryPart
+            or m:FindFirstChildWhichIsA("BasePart",true)
+    end
+    local function addCar(m)
+        if cars[m] or not m or not m:IsA("Model") then return end
+        local a=vehicleAnchor(m); if not a then return end
+        local h=Instance.new("Highlight")
+        h.Name="YokaiPreservedCarESP"; h.Adornee=m; h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; h.FillTransparency=.86; h.OutlineTransparency=.08; h.Enabled=false; h.Parent=m
+        local bb=Instance.new("BillboardGui")
+        bb.Name="YokaiPreservedCarLabel"; bb.Adornee=a; bb.AlwaysOnTop=true; bb.MaxDistance=0; bb.Size=UDim2.fromOffset(180,28); bb.StudsOffsetWorldSpace=Vector3.new(0,3,0); bb.Enabled=false; bb.Parent=a
+        local t=Instance.new("TextLabel")
+        t.BackgroundTransparency=1; t.Size=UDim2.fromScale(1,1); t.Font=Enum.Font.GothamSemibold; t.TextSize=12; t.TextStrokeTransparency=.45; t.Parent=bb
+        cars[m]={h=h,bb=bb,t=t,a=a}
+    end
+
+    local activeLast=false
     RunService.RenderStepped:Connect(function()
-        local cam=Workspace.CurrentCamera; if not cam then return end
-        cam.FieldOfView=State.Visuals.FOV
-        preview.Visible=State.Visuals.Preview
-        status.Text="Bots: "..Registry.CountBots().."  •  Vehicles: "..Registry.CountVehicles()
-
-        for m in pairs(stores) do if not Registry.Bots[m] or not Registry.IsBot(m) then destroyStore(m) end end
-        for model in pairs(Registry.Bots) do
-            if Registry.IsBot(model) then
-                local s=stores[model] or createStore(model)
-                local root=Registry.RootOf(model); local hum=Registry.HumanoidOf(model); local tl,br=bounds(model,cam)
-                local active=State.Visuals.ESP or State.Visuals.Chams or State.Visuals.CornerBox or State.Visuals.Box3D or State.Visuals.HealthBar or State.Visuals.NameDistance or State.Visuals.ThermalCorner or State.Visuals.Tracers or State.Visuals.Skeleton
-                if not active then hideStore(s) continue end
-                local col=Color3.fromRGB(125,150,255)
-                s.highlight.Enabled=State.Visuals.Chams or State.Visuals.ESP; s.highlight.FillColor=col; s.highlight.OutlineColor=col; s.highlight.FillTransparency=.72; s.highlight.OutlineTransparency=.03
-                if tl and br then
-                    if State.Visuals.CornerBox or State.Visuals.ESP then corners(s.corner,tl,br,col) else hideLines(s.corner) end
-                    if State.Visuals.ThermalCorner then local pulse=.5+.5*math.sin(os.clock()*3); corners(s.thermal,tl,br,Color3.fromHSV(.72,.7,.65+.35*pulse)) else hideLines(s.thermal) end
-                    local dist=root and (root.Position-cam.CFrame.Position).Magnitude or 0
-                    if State.Visuals.NameDistance or State.Visuals.ESP then s.name.Text=model.Name.."  ["..math.floor(dist).."]"; s.name.Position=UDim2.fromOffset((tl.X+br.X)/2-125,tl.Y-18); s.name.Visible=true else s.name.Visible=false end
-                    if (State.Visuals.HealthBar or State.Visuals.ESP) and hum then local ratio=math.clamp(hum.Health/math.max(1,hum.MaxHealth),0,1); local h=br.Y-tl.Y; s.hb.Position=UDim2.fromOffset(br.X+4,tl.Y); s.hb.Size=UDim2.fromOffset(4,h); s.hb.Visible=true; s.hp.Position=UDim2.fromOffset(br.X+5,tl.Y+1+(h-2)*(1-ratio)); s.hp.Size=UDim2.fromOffset(2,(h-2)*ratio); s.hp.BackgroundColor3=Color3.fromHSV(ratio*.33,.8,1); s.hp.Visible=true else s.hb.Visible=false; s.hp.Visible=false end
-                    if State.Visuals.Tracers then setLine(s.tracer,Vector2.new(cam.ViewportSize.X/2,cam.ViewportSize.Y),Vector2.new((tl.X+br.X)/2,br.Y),1,col,.05) else s.tracer.Visible=false end
-                else s.name.Visible=false; s.hb.Visible=false; s.hp.Visible=false; s.tracer.Visible=false; hideLines(s.corner); hideLines(s.thermal) end
-                if State.Visuals.Skeleton then skeleton(s.skel,model,cam,Color3.new(1,1,1)) else hideLines(s.skel) end
-                if State.Visuals.Box3D then box3d(s.box3d,root,cam,col) else hideLines(s.box3d) end
+        applyFov()
+        previewGui.Enabled=State.Visuals.Preview==true
+        if State.Visuals.Preview then
+            local on=State.Visuals.ESP or State.Visuals.Chams or State.Visuals.CornerBox or State.Visuals.ThermalCorner
+            pdummy.BackgroundTransparency=on and .18 or .58; phead.BackgroundTransparency=pdummy.BackgroundTransparency
+            pout.Transparency=on and 0 or .45; pho.Transparency=pout.Transparency
+            ptracer.Visible=State.Visuals.Tracers==true
+            if ptracer.Visible then
+                local sz=pcanvas.AbsoluteSize
+                setLine(ptracer,Vector2.new(sz.X/2,sz.Y),Vector2.new(sz.X/2,sz.Y*.53),1,Color3.new(1,1,1))
             end
         end
 
-        for model in pairs(carStores) do if not Registry.Vehicles[model] or not model.Parent then local s=carStores[model]; if s.hi then s.hi:Destroy() end; if s.bb then s.bb:Destroy() end; carStores[model]=nil end end
+        local cam=Workspace.CurrentCamera
+        if not cam then return end
+        local any=State.Visuals.Chams or State.Visuals.CornerBox or State.Visuals.ThermalCorner or State.Visuals.HealthBar or State.Visuals.NameDistance or State.Visuals.Skeleton or State.Visuals.Tracers or State.Visuals.Box3D or State.Visuals.ESP
+        if not any then
+            if activeLast then for _,s in pairs(stores) do hideStore(s) end end
+            activeLast=false
+        else
+            activeLast=true
+            for model in pairs(stores) do if not Registry.Bots[model] or not Registry.IsBot(model) then destroyStore(model) end end
+            for model in pairs(Registry.Bots) do
+                if Registry.IsBot(model) then
+                    local s=stores[model] or newStore(model)
+                    local hum=Registry.HumanoidOf(model)
+                    local root=Registry.RootOf(model)
+                    local pos,w,h,dist
+                    if root then pos,w,h,dist=screenData(root) end
+
+                    -- Chams has no range check and remains active even if the bot is off-screen.
+                    if State.Visuals.Chams then
+                        s.Chams.Adornee=model; s.Chams.Enabled=true; s.Chams.FillColor=BLUE; s.Chams.OutlineColor=BLUE
+                        local pulse=math.clamp(math.atan(math.sin(os.clock()*2))*2/math.pi,0,1)
+                        s.Chams.FillTransparency=pulse; s.Chams.OutlineTransparency=pulse
+                    else s.Chams.Enabled=false end
+
+                    if not pos then
+                        s.CornerFill.Visible=false; s.ThermalFill.Visible=false; s.Health.Visible=false; s.HealthBack.Visible=false; s.HealthText.Visible=false
+                        s.Name.Visible=false; s.Distance.Visible=false; s.Tracer.Visible=false; hideList(s.Corner); hideList(s.ThermalCorner); hideList(s.Skeleton); hideList(s.Box3D)
+                        s.PackBox.Visible=false; s.PackHealth.Visible=false; s.PackHealthBack.Visible=false; s.PackHealthText.Visible=false; s.PackName.Visible=false; s.PackDistance.Visible=false; s.PackWeapon.Visible=false; hideList(s.PackCorners)
+                        s.PackChams.Enabled=State.Visuals.ESP
+                        if State.Visuals.ESP then s.PackChams.Adornee=model; s.PackChams.FillColor=BLUE; s.PackChams.OutlineColor=BLUE; s.PackChams.FillTransparency=.82; s.PackChams.OutlineTransparency=.08 end
+                    else
+                        if State.Visuals.CornerBox then
+                            s.CornerFill.Position=UDim2.fromOffset(pos.X-w/2,pos.Y-h/2); s.CornerFill.Size=UDim2.fromOffset(w,h); s.CornerFill.Visible=true
+                            updateCorners(s.Corner,pos,w,h,Color3.new(1,1,1))
+                        else s.CornerFill.Visible=false; hideList(s.Corner) end
+
+                        if State.Visuals.ThermalCorner then
+                            s.ThermalFill.Position=UDim2.fromOffset(pos.X-w/2,pos.Y-h/2); s.ThermalFill.Size=UDim2.fromOffset(w,h); s.ThermalFill.BackgroundColor3=BLUE; s.ThermalFill.Visible=true
+                            updateCorners(s.ThermalCorner,pos,w,h,Color3.new(1,1,1))
+                        else s.ThermalFill.Visible=false; hideList(s.ThermalCorner) end
+
+                        if State.Visuals.HealthBar and hum then updateHealth(s.Health,s.HealthBack,s.HealthText,hum,pos,w,h,2.5,BLUE,true)
+                        else s.Health.Visible=false; s.HealthBack.Visible=false; s.HealthText.Visible=false end
+
+                        if State.Visuals.NameDistance then
+                            s.Name.Position=UDim2.fromOffset(pos.X,pos.Y-h/2-15); s.Name.Text=model.Name; s.Name.TextColor3=Color3.new(1,1,1); s.Name.Visible=true
+                            s.Distance.Position=UDim2.fromOffset(pos.X,pos.Y+h/2+7); s.Distance.Text=string.format("%d meters",math.floor(dist)); s.Distance.TextColor3=Color3.new(1,1,1); s.Distance.Visible=true
+                        else s.Name.Visible=false; s.Distance.Visible=false end
+
+                        if State.Visuals.Skeleton then updateSkeleton(s.Skeleton,model,Color3.new(1,1,1)) else hideList(s.Skeleton) end
+                        if State.Visuals.Tracers then setLine(s.Tracer,Vector2.new(cam.ViewportSize.X/2,cam.ViewportSize.Y),pos,1,Color3.new(1,1,1)) else s.Tracer.Visible=false end
+                        if State.Visuals.Box3D then update3D(s.Box3D,root,Color3.new(1,1,1)) else hideList(s.Box3D) end
+
+                        -- ESP = the old all-in-one pack. No distance check.
+                        if State.Visuals.ESP then
+                            s.PackChams.Adornee=model; s.PackChams.Enabled=true; s.PackChams.FillColor=BLUE; s.PackChams.OutlineColor=BLUE; s.PackChams.FillTransparency=.84; s.PackChams.OutlineTransparency=.08
+                            s.PackBox.Position=UDim2.fromOffset(pos.X-w/2,pos.Y-h/2); s.PackBox.Size=UDim2.fromOffset(w,h); s.PackBox.Visible=true
+                            updateCorners(s.PackCorners,pos,w,h,BLUE)
+                            if hum then updateHealth(s.PackHealth,s.PackHealthBack,s.PackHealthText,hum,pos,w,h,2.5,BLUE,true) end
+                            s.PackName.Position=UDim2.fromOffset(pos.X,pos.Y-h/2-15); s.PackName.Text=model.Name; s.PackName.TextColor3=Color3.new(1,1,1); s.PackName.Visible=true
+                            s.PackDistance.Position=UDim2.fromOffset(pos.X,pos.Y+h/2+7); s.PackDistance.Text=string.format("%d meters",math.floor(dist)); s.PackDistance.TextColor3=Color3.new(1,1,1); s.PackDistance.Visible=true
+                        else
+                            s.PackChams.Enabled=false; s.PackBox.Visible=false; hideList(s.PackCorners); s.PackHealth.Visible=false; s.PackHealthBack.Visible=false; s.PackHealthText.Visible=false; s.PackName.Visible=false; s.PackDistance.Visible=false; s.PackWeapon.Visible=false
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Car ESP: every registered/replicated vehicle is shown when enabled, regardless of range.
+        for model in pairs(cars) do
+            if not Registry.Vehicles[model] or not model.Parent then
+                local s=cars[model]; if s.h then s.h:Destroy() end; if s.bb then s.bb:Destroy() end; cars[model]=nil
+            end
+        end
         for model in pairs(Registry.Vehicles) do
-            local s=carStores[model] or makeCar(model); local root=vehicleRoot(model)
-            s.hi.Enabled=State.Visuals.CarESP
-            if s.bb then s.bb.Enabled=State.Visuals.CarESP; local t=s.bb:FindFirstChildOfClass("TextLabel"); if t and root then local d=(root.Position-cam.CFrame.Position).Magnitude; t.Text=model.Name.."  ["..math.floor(d).."]" end end
+            if model and model.Parent then
+                addCar(model)
+                local s=cars[model]
+                if s then
+                    local show=State.Visuals.CarESP==true
+                    s.h.Enabled=show; s.bb.Enabled=show
+                    if show then
+                        s.h.FillColor=carColor; s.h.OutlineColor=carColor; s.t.TextColor3=carColor
+                        local dist=(s.a.Position-cam.CFrame.Position).Magnitude
+                        s.t.Text=string.format("%s  •  %d studs",model.Name:gsub("_"," "),math.floor(dist+.5))
+                    end
+                end
+            end
         end
     end)
 end
