@@ -12,7 +12,7 @@ local State = {
     },
     Movement = {
         Fly = false, CarFly = false, Noclip = false, Speed = false,
-        SpeedValue = 32, MouseTP = false,
+        SpeedValue = 32, FlySpeed = 65, CarFlySpeed = 90, MouseTP = false,
     },
     Combat = {
         Aimbot = false, HitBoxes = false, SilentAim = false, AntiAim = false,
@@ -22,7 +22,8 @@ local State = {
         AntiAFK = false, NoMenuFog = false,
     },
     Local = {
-        HitSound = false, GunChams = false, SelfChams = false, Trail = false,
+        HitSound = false, GunChams = false, SelfChams = false,
+        Trail = false, TrailGlow = false,
     },
 }
 
