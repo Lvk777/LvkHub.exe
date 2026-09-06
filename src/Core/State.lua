@@ -18,6 +18,8 @@ local State = {
         Aimbot = false, HitBoxes = false, SilentAim = false, MagicBullets = false,
         AntiAim = false, AimPart = "Head", HitboxSize = 6,
         AimFOV = 180, ShowAimFOV = true,
+        WallCheck = true,
+        MagicThroughWalls = false,
     },
     Utility = {
         AntiAFK = false, NoMenuFog = false,
