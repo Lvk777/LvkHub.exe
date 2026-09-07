@@ -48,8 +48,33 @@ return function(State, Registry, UI)
     dots.Font=Enum.Font.SourceSansBold
     dots.TextSize=20
     dots.TextColor3=Color3.fromRGB(175,175,185)
-    dots.ZIndex=92
+    dots.ZIndex=94
     dots.Parent=header
+
+    local menu=Instance.new("Frame")
+    menu.AnchorPoint=Vector2.new(1,0)
+    menu.Position=UDim2.new(1,-4,0,34)
+    menu.Size=UDim2.fromOffset(142,36)
+    menu.BackgroundColor3=Color3.fromRGB(28,28,33)
+    menu.BorderSizePixel=0
+    menu.Visible=false
+    menu.ZIndex=100
+    menu.Parent=frame
+    local mc=Instance.new("UICorner"); mc.CornerRadius=UDim.new(0,5); mc.Parent=menu
+    local ms=Instance.new("UIStroke"); ms.Color=Color3.fromRGB(55,56,66); ms.Parent=menu
+
+    local invButton=Instance.new("TextButton")
+    invButton.Position=UDim2.fromOffset(5,5)
+    invButton.Size=UDim2.new(1,-10,1,-10)
+    invButton.BackgroundColor3=Color3.fromRGB(36,36,42)
+    invButton.BorderSizePixel=0
+    invButton.Font=Enum.Font.SourceSans
+    invButton.TextSize=12
+    invButton.TextColor3=Color3.fromRGB(224,224,230)
+    invButton.Text="Inventory Viewer"
+    invButton.ZIndex=101
+    invButton.Parent=menu
+    local ibc=Instance.new("UICorner"); ibc.CornerRadius=UDim.new(0,4); ibc.Parent=invButton
 
     local avatar=Instance.new("ImageLabel")
     avatar.Position=UDim2.fromOffset(12,46)
@@ -113,13 +138,14 @@ return function(State, Registry, UI)
 
     local current=nil
     local thumbCache={}
+    local thumbPending={}
     local function selectTarget()
         local api=shared.LvkHubDummyAimAPI
         if api and type(api.ChooseTarget)=="function" then
             local m=api.ChooseTarget(false)
             if m and Registry.IsBot(m) then return m end
         end
-        for m in pairs(Registry.Bots) do if Registry.IsBot(m) then return m end end
+        return nil
     end
 
     local function updateAvatar(model)
@@ -128,14 +154,20 @@ return function(State, Registry, UI)
         if not plr then avatar.Image=""; return source or model.Name end
         local display=plr.DisplayName
         if thumbCache[plr.UserId] then avatar.Image=thumbCache[plr.UserId]; return display end
-        task.spawn(function()
-            local ok,img=pcall(function() return Players:GetUserThumbnailAsync(plr.UserId,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size150x150) end)
-            if ok then thumbCache[plr.UserId]=img; if current==model then avatar.Image=img end end
-        end)
+        if not thumbPending[plr.UserId] then
+            thumbPending[plr.UserId]=true
+            task.spawn(function()
+                local ok,img=pcall(function() return Players:GetUserThumbnailAsync(plr.UserId,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size150x150) end)
+                thumbPending[plr.UserId]=nil
+                if ok then thumbCache[plr.UserId]=img; if current==model then avatar.Image=img end end
+            end)
+        end
         return display
     end
 
-    dots.MouseButton1Click:Connect(function()
+    dots.MouseButton1Click:Connect(function() menu.Visible=not menu.Visible end)
+    invButton.MouseButton1Click:Connect(function()
+        menu.Visible=false
         if not current or not Registry.IsBot(current) then return end
         State.Combat.SelectedBot=current
         State.Combat.DummyInventoryVisible=true
@@ -144,12 +176,12 @@ return function(State, Registry, UI)
     local timer=0
     RunService.RenderStepped:Connect(function(dt)
         frame.Visible=State.Visuals.TargetInfo==true
-        if not frame.Visible then return end
+        if not frame.Visible then menu.Visible=false; return end
         timer+=dt
         if timer<.12 then return end
         timer=0
         local model=selectTarget()
-        if model~=current then current=model; avatar.Image="" end
+        if model~=current then current=model; avatar.Image=""; menu.Visible=false end
         if not model then name.Text="No target"; hp.Size=UDim2.fromScale(0,1); hpText.Text="HP --"; return end
         local hum=Registry.HumanoidOf(model)
         local ratio=hum and math.clamp(hum.Health/math.max(hum.MaxHealth,1),0,1) or 0
