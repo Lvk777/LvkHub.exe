@@ -70,6 +70,7 @@ local ok,err=pcall(function()
     loadModule("src/Vehicle/Main.lua")(State,Registry,UI)
 
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
+    loadModule("src/Utility/Presets.lua")(State,Registry,UI)
     loadModule("src/Utility/SoloSurvival.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
 
