@@ -33,6 +33,7 @@ local State = {
     Utility = {
         AntiAFK = false, NoMenuFog = false,
         FullHunger = false, FullThirst = false,
+        MenuKeyName = "RightShift",
     },
     Local = {
         HitSound = false, MuteGunshots = false,
