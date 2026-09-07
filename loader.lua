@@ -28,12 +28,9 @@ local ok,err=pcall(function()
     loadModule("src/Combat/Main.lua")(State,Registry,UI)
     loadModule("src/Movement/Main.lua")(State,Registry,UI)
 
-    -- Prime one dedicated Highlight per local TestPlayer before the legacy
-    -- Visuals renderer creates its own internal objects. This keeps Chams stable
-    -- with many test dummies and avoids the duplicate fallback renderer.
-    loadModule("src/Visuals/TestPlayersChams.lua")(State,Registry,UI)
-    loadModule("src/Visuals/Main.lua")(State,Registry,UI)
-    loadModule("src/Visuals/CarESPExact.lua")(State)
+    -- One owner for every TestPlayers visual. Do not load the old Main/Chams/
+    -- CarESP stacks together because they create duplicate overlays/highlights.
+    loadModule("src/Visuals/UnifiedTestVisualsV3.lua")(State,Registry,UI)
 
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
