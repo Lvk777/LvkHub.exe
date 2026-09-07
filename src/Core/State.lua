@@ -20,6 +20,10 @@ local State = {
         AimFOV = 180, ShowAimFOV = true,
         WallCheck = true,
         MagicThroughWalls = false,
+        NoRecoil = false,
+        InfiniteAmmo = false,
+        FastReload = false,
+        FastReloadMultiplier = 4,
     },
     Utility = {
         AntiAFK = false, NoMenuFog = false,
