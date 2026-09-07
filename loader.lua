@@ -20,12 +20,35 @@ end
 local ok,err=pcall(function()
     local State=loadModule("src/Core/State.lua")
 
-    -- Restrictions are an explicit required dependency. There is no synthetic
-    -- fail-closed fallback object anymore: if the policy is missing/invalid,
-    -- loading stops here instead of silently substituting another target mode.
-    local Restrictions=loadModule("src/Restrictions/Policy.lua")
-    if type(Restrictions)~="table" or type(Restrictions.Targets)~="table" then
-        error("LvkHub invalid restrictions policy")
+    -- Policy is the single source of target/session authorization. If the file is
+    -- missing or invalid, the hub still loads, but the fallback authorizes no
+    -- gameplay targets and no solo-only state modifications.
+    local Restrictions=nil
+    local policyOK,policyResult=pcall(function()
+        return loadModule("src/Restrictions/Policy.lua")
+    end)
+    if policyOK and type(policyResult)=="table" and type(policyResult.Targets)=="table" then
+        Restrictions=policyResult
+    end
+    if not Restrictions then
+        local EmptyTargets={
+            Mode="DENY_ALL",
+            IsAllowedTarget=function() return false end,
+            IsRealPlayerCharacter=function() return true end,
+            CanCloneSource=function() return false end,
+            GetCandidates=function() return {} end,
+            GetWatchRoots=function() return {} end,
+            Describe=function() return false,"restrictions missing: deny all" end,
+        }
+        Restrictions={
+            Name="LvkHubRestrictionsFallback",
+            FailClosed=true,
+            Targets=EmptyTargets,
+            OtherPlayerCount=function() return math.huge end,
+            SoloWeaponModsAllowed=function() return false end,
+            VehicleBringAllowed=function() return false end,
+            RealPlayerInSeat=function() return true end,
+        }
     end
     shared.LvkHubRestrictions=Restrictions
     shared.LvkHubTargetRestrictions=Restrictions.Targets
