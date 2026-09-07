@@ -1,6 +1,7 @@
--- UI additions: Vehicle window + reusable keybind row.
+-- UI additions: Vehicle window + a single docked options area below Utility.
 return function(State, UI)
     local UIS=game:GetService("UserInputService")
+    local RunService=game:GetService("RunService")
     local Workspace=game:GetService("Workspace")
 
     local function rounded(obj,r)
@@ -9,6 +10,9 @@ return function(State, UI)
         c.Parent=obj
     end
 
+    ------------------------------------------------------------------------
+    -- Vehicle category/window.
+    ------------------------------------------------------------------------
     if not UI.Pages.Vehicle then
         local main=UI.Main
         local win=Instance.new("Frame")
@@ -76,25 +80,43 @@ return function(State, UI)
         page.CanvasSize=UDim2.new()
         page.Parent=win
         local pad=Instance.new("UIPadding")
-        pad.PaddingTop=UDim.new(0,5); pad.PaddingBottom=UDim.new(0,5); pad.PaddingLeft=UDim.new(0,5); pad.PaddingRight=UDim.new(0,5); pad.Parent=page
+        pad.PaddingTop=UDim.new(0,5)
+        pad.PaddingBottom=UDim.new(0,5)
+        pad.PaddingLeft=UDim.new(0,5)
+        pad.PaddingRight=UDim.new(0,5)
+        pad.Parent=page
         local list=Instance.new("UIListLayout")
-        list.Padding=UDim.new(0,3); list.SortOrder=Enum.SortOrder.LayoutOrder; list.Parent=page
+        list.Padding=UDim.new(0,3)
+        list.SortOrder=Enum.SortOrder.LayoutOrder
+        list.Parent=page
 
         local expanded=true
         local function resize()
-            if not expanded then page.Size=UDim2.new(1,0,0,0); win.Size=UDim2.fromOffset(220,37); return end
+            if not expanded then
+                page.Size=UDim2.new(1,0,0,0)
+                win.Size=UDim2.fromOffset(220,37)
+                return
+            end
             local h=math.clamp(list.AbsoluteContentSize.Y+10,0,430)
             page.Size=UDim2.new(1,0,0,h)
             win.Size=UDim2.fromOffset(220,37+h)
         end
         list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(resize)
         task.defer(resize)
-        arrow.MouseButton1Click:Connect(function() expanded=not expanded; arrow.Text=expanded and "▼" or "▶"; resize() end)
+        arrow.MouseButton1Click:Connect(function()
+            expanded=not expanded
+            arrow.Text=expanded and "▼" or "▶"
+            resize()
+        end)
 
         local dragging=false
         local startMouse,startPos
         header.InputBegan:Connect(function(input)
-            if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; startMouse=input.Position; startPos=win.Position end
+            if input.UserInputType==Enum.UserInputType.MouseButton1 then
+                dragging=true
+                startMouse=input.Position
+                startPos=win.Position
+            end
         end)
         UIS.InputChanged:Connect(function(input)
             if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then
@@ -102,47 +124,65 @@ return function(State, UI)
                 win.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
             end
         end)
-        UIS.InputEnded:Connect(function(input) if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+        UIS.InputEnded:Connect(function(input)
+            if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end
+        end)
 
         UI.Pages.Vehicle=page
         UI.Windows.Vehicle=win
     end
 
-    if not UI.Keybind then
-        function UI.Keybind(page,label,get,set,onPressed)
-            local f,t=UI.Row(page,label)
-            t.Size=UDim2.new(1,-88,1,0)
-            local b=Instance.new("TextButton")
-            b.AnchorPoint=Vector2.new(1,.5)
-            b.Position=UDim2.new(1,-7,.5,0)
-            b.Size=UDim2.fromOffset(74,20)
-            b.BackgroundColor3=Color3.fromRGB(32,32,32)
-            b.BorderSizePixel=0
-            b.Font=Enum.Font.Code
-            b.TextSize=10
-            b.TextColor3=Color3.fromRGB(205,205,215)
-            b.Parent=f
-            rounded(b,3)
-            local listening=false
-            local function paint()
-                local key=get()
-                b.Text=listening and "PRESS KEY" or (key and key.Name or "NONE")
-                b.TextColor3=listening and UI.Accent or Color3.fromRGB(205,205,215)
-            end
-            b.MouseButton1Click:Connect(function() listening=true; paint() end)
-            UIS.InputBegan:Connect(function(input,processed)
-                if input.UserInputType~=Enum.UserInputType.Keyboard then return end
-                if listening then
-                    listening=false
-                    if input.KeyCode==Enum.KeyCode.Escape then set(nil) else set(input.KeyCode) end
-                    paint()
-                    return
-                end
-                local key=get()
-                if not processed and key and input.KeyCode==key and onPressed then task.spawn(onPressed) end
-            end)
-            paint()
-            return b
+    ------------------------------------------------------------------------
+    -- One dock for every ••• options panel.
+    -- Panels are parented to the top-level GUI (not UtilityWindow) so they do
+    -- not become blank/clipped rectangles when the Utility page resizes.
+    ------------------------------------------------------------------------
+    UI.ActiveDockedPanel=nil
+
+    local function placeDockedPanel(panel)
+        if not panel or not panel.Parent then return end
+        local utility=UI.Windows.Utility
+        local cam=Workspace.CurrentCamera
+        if not utility or not cam then return end
+
+        local p=utility.AbsolutePosition
+        local s=utility.AbsoluteSize
+        local ps=panel.AbsoluteSize
+        local vp=cam.ViewportSize
+        local x=math.clamp(p.X,4,math.max(4,vp.X-math.max(ps.X,214)-4))
+        local y=p.Y+s.Y+6
+        if y+math.max(ps.Y,44)>vp.Y-4 then
+            y=math.max(4,p.Y-math.max(ps.Y,44)-6)
+        end
+        panel.Position=UDim2.fromOffset(x,y)
+    end
+
+    function UI.CloseDockedPanel(panel)
+        local current=UI.ActiveDockedPanel
+        if panel and current~=panel then return end
+        UI.ActiveDockedPanel=nil
+        if current and current.Parent then
+            pcall(function() current:Destroy() end)
         end
     end
+
+    function UI.OpenDockedPanel(panel)
+        if not panel then return end
+        if UI.ActiveDockedPanel and UI.ActiveDockedPanel~=panel and UI.ActiveDockedPanel.Parent then
+            pcall(function() UI.ActiveDockedPanel:Destroy() end)
+        end
+        UI.ActiveDockedPanel=panel
+        panel.Parent=UI.Gui
+        panel.Visible=true
+        task.defer(placeDockedPanel,panel)
+    end
+
+    RunService.RenderStepped:Connect(function()
+        local panel=UI.ActiveDockedPanel
+        if panel and panel.Parent then
+            placeDockedPanel(panel)
+        elseif panel then
+            UI.ActiveDockedPanel=nil
+        end
+    end)
 end
