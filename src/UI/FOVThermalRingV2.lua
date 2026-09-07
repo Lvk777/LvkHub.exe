@@ -1,5 +1,5 @@
--- Thermal-style animated border for the existing FOV circle.
--- Center stays completely transparent; animation runs only around the perimeter.
+-- Two-tone thermal-style animated border for the existing FOV circle.
+-- The center stays fully transparent. Only the perimeter animates.
 return function(State, UI)
     local RunService=game:GetService("RunService")
     local CoreGui=game:GetService("CoreGui")
@@ -8,16 +8,24 @@ return function(State, UI)
     if not fovGui then return end
 
     local circle=nil
-    for _,x in ipairs(fovGui:GetChildren()) do if x:IsA("Frame") then circle=x break end end
+    for _,x in ipairs(fovGui:GetChildren()) do
+        if x:IsA("Frame") and x.Name~="LvkHubThermalFOVRingV2" then
+            circle=x
+            break
+        end
+    end
     if not circle then return end
+
+    -- Remove the old fill/rainbow presentation. The effect below is border-only.
     circle.BackgroundTransparency=1
     local oldGrad=circle:FindFirstChildWhichIsA("UIGradient")
-    if oldGrad then oldGrad.Enabled=false end
+    if oldGrad then pcall(function() oldGrad.Enabled=false end) end
     local oldStroke=circle:FindFirstChildWhichIsA("UIStroke")
-    if oldStroke then oldStroke.Transparency=.82;oldStroke.Color=Color3.fromRGB(90,95,130);oldStroke.Thickness=1 end
+    if oldStroke then oldStroke.Transparency=1 end
 
-    local old=fovGui:FindFirstChild("LvkHubThermalFOVRingV2")
-    if old then old:Destroy() end
+    local previous=fovGui:FindFirstChild("LvkHubThermalFOVRingV2")
+    if previous then previous:Destroy() end
+
     local holder=Instance.new("Frame")
     holder.Name="LvkHubThermalFOVRingV2"
     holder.BackgroundTransparency=1
@@ -26,64 +34,79 @@ return function(State, UI)
     holder.ZIndex=20
     holder.Parent=fovGui
 
-    local N=72
-    local segs={}
-    for i=1,N do
+    local COUNT=96
+    local core={}
+    local glow={}
+
+    local function segment(parentName,z,thickness,transparency)
         local f=Instance.new("Frame")
+        f.Name=parentName
         f.AnchorPoint=Vector2.new(.5,.5)
         f.BorderSizePixel=0
-        f.BackgroundColor3=Color3.fromRGB(120,120,255)
-        f.ZIndex=21
+        f.BackgroundTransparency=transparency
+        f.Size=UDim2.fromOffset(8,thickness)
+        f.ZIndex=z
+        f.Visible=false
         f.Parent=holder
-        local c=Instance.new("UICorner");c.CornerRadius=UDim.new(1,0);c.Parent=f
-        segs[i]=f
+        local c=Instance.new("UICorner")
+        c.CornerRadius=UDim.new(1,0)
+        c.Parent=f
+        return f
     end
 
-    local stops={
-        {0.00,Color3.fromRGB(72,84,255)},
-        {0.20,Color3.fromRGB(54,205,255)},
-        {0.43,Color3.fromRGB(137,90,255)},
-        {0.66,Color3.fromRGB(245,78,205)},
-        {0.84,Color3.fromRGB(255,132,92)},
-        {1.00,Color3.fromRGB(72,84,255)},
-    }
-    local function thermalColor(t)
-        t=t%1
-        for i=1,#stops-1 do
-            local a,b=stops[i],stops[i+1]
-            if t>=a[1] and t<=b[1] then
-                local u=(t-a[1])/math.max(.0001,b[1]-a[1])
-                return a[2]:Lerp(b[2],u)
-            end
-        end
-        return stops[#stops][2]
+    for i=1,COUNT do
+        glow[i]=segment("ThermalGlow",20,5.2,.80)
+        core[i]=segment("ThermalCore",21,2.15,.02)
     end
 
+    -- Exactly two tones at once, like the reference: violet/blue + pink.
+    local violet=Color3.fromRGB(105,120,255)
+    local pink=Color3.fromRGB(255,67,183)
     local phase=0
-    RunService.RenderStepped:Connect(function(dt)
+
+    local bindName="LvkHubThermalFOVRingV2"
+    pcall(function() RunService:UnbindFromRenderStep(bindName) end)
+    RunService:BindToRenderStep(bindName,Enum.RenderPriority.Last.Value+620,function(dt)
         if not circle.Parent or not holder.Parent then return end
         local show=State.Combat and State.Combat.ShowAimFOV==true and circle.Visible~=false
         holder.Visible=show
         if not show then return end
-        phase=(phase+dt*.11)%1
+
+        phase=(phase+dt*1.55)%(math.pi*2)
 
         local ap=circle.AbsolutePosition
         local as=circle.AbsoluteSize
         local center=Vector2.new(ap.X+as.X*.5,ap.Y+as.Y*.5)
         local radius=math.max(2,math.min(as.X,as.Y)*.5)
         local circumference=2*math.pi*radius
-        local segLen=math.max(3,circumference/N*1.16)
+        local segLen=math.max(3,circumference/COUNT*1.18)
 
-        for i,f in ipairs(segs) do
-            local a=((i-1)/N)*math.pi*2
-            local p=center+Vector2.new(math.cos(a),math.sin(a))*radius
-            f.Position=UDim2.fromOffset(p.X,p.Y)
-            f.Size=UDim2.fromOffset(segLen,2.2)
-            f.Rotation=math.deg(a)+90
-            local u=((i-1)/N+phase)%1
-            local pulse=.5+.5*math.sin((u-phase)*math.pi*2*3-os.clock()*1.6)
-            f.BackgroundColor3=thermalColor(u)
-            f.BackgroundTransparency=.02+.28*(1-pulse)
+        for i=1,COUNT do
+            local angle=((i-1)/COUNT)*(math.pi*2)
+            local p=center+Vector2.new(math.cos(angle),math.sin(angle))*radius
+            local tangent=math.deg(angle)+90
+
+            -- This wave moves around the circle. Both colors are always present,
+            -- while their meeting points rotate continuously around the border.
+            local mix=(math.sin(angle-phase)+1)*.5
+            local color=violet:Lerp(pink,mix)
+            local heat=(math.sin((angle-phase)*2)+1)*.5
+
+            local g=glow[i]
+            g.Position=UDim2.fromOffset(p.X,p.Y)
+            g.Size=UDim2.fromOffset(segLen+1.5,5.2)
+            g.Rotation=tangent
+            g.BackgroundColor3=color
+            g.BackgroundTransparency=.70+.18*(1-heat)
+            g.Visible=true
+
+            local s=core[i]
+            s.Position=UDim2.fromOffset(p.X,p.Y)
+            s.Size=UDim2.fromOffset(segLen,2.2)
+            s.Rotation=tangent
+            s.BackgroundColor3=color
+            s.BackgroundTransparency=.01+.07*(1-heat)
+            s.Visible=true
         end
     end)
 end
