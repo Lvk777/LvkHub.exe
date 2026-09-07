@@ -21,6 +21,22 @@ end
 
 local ok,err=pcall(function()
     local State=loadModule("src/Core/State.lua")
+
+    -- =====================================================================
+    -- ISOLATED TARGET RESTRICTIONS
+    -- RegistryV2 is fail-closed: if this file is missing or fails to load,
+    -- target-dependent Combat/Visuals receive ZERO registered targets.
+    -- There is intentionally NO real-player fallback.
+    -- =====================================================================
+    local TargetRestrictions=nil
+    local policyOK,policyResult=pcall(function()
+        return loadModule("src/Core/TargetRestrictions.lua")
+    end)
+    if policyOK and type(policyResult)=="table" then
+        TargetRestrictions=policyResult
+    end
+    shared.LvkHubTargetRestrictions=TargetRestrictions
+
     local Registry=loadModule("src/Core/RegistryV2.lua")
     loadModule("src/Core/RegistryBootstrap.lua")(Registry)
 
@@ -50,7 +66,12 @@ local ok,err=pcall(function()
     loadModule("src/Core/YokaiPolish.lua")(UI)
     loadModule("src/Core/YokaiBlueTheme.lua")(UI)
 
-    shared.LvkHubExe={State=State,Registry=Registry,UI=UI}
+    shared.LvkHubExe={
+        State=State,
+        Registry=Registry,
+        UI=UI,
+        TargetRestrictions=TargetRestrictions,
+    }
 end)
 
 if not ok then
