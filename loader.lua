@@ -20,9 +20,9 @@ end
 local ok,err=pcall(function()
     local State=loadModule("src/Core/State.lua")
 
-    -- Policy is the normal source of target/session authorization.
-    -- If the file is missing, the hub keeps working in LOCAL TEST-DUMMY mode
-    -- instead of switching to real Player.Character targets.
+    ------------------------------------------------------------------------
+    -- 1) POLICY: authorization only.
+    ------------------------------------------------------------------------
     local Restrictions=nil
     local policyOK,policyResult=pcall(function()
         return loadModule("src/Restrictions/Policy.lua")
@@ -30,17 +30,19 @@ local ok,err=pcall(function()
     if policyOK and type(policyResult)=="table" and type(policyResult.Targets)=="table" then
         Restrictions=policyResult
     end
+
+    -- Missing policy never becomes real-player targeting. Keep a local-practice
+    -- authorization fallback so UI/local dummy practice can still initialize.
     if not Restrictions then
         local Players=game:GetService("Players")
         local Workspace=game:GetService("Workspace")
         local LP=Players.LocalPlayer
-
         local LocalTargets={
             Mode="TEST_DUMMIES_ONLY",
             TargetFolderName="TestPlayers",
             ManagedDummyAttribute="LvkHubManagedDummy",
+            CandidateKind="practice_dummy",
         }
-
         function LocalTargets.IsRealPlayerCharacter(model)
             if not model or not model:IsA("Model") then return false end
             local okPlayer,player=pcall(function() return Players:GetPlayerFromCharacter(model) end)
@@ -51,48 +53,27 @@ local ok,err=pcall(function()
             end
             return false
         end
-
-        function LocalTargets.IsAllowedTarget(model)
-            if not model or not model:IsA("Model") then return false end
-            local folder=Workspace:FindFirstChild(LocalTargets.TargetFolderName)
-            if not folder or not model:IsDescendantOf(folder) then return false end
-            if model:GetAttribute(LocalTargets.ManagedDummyAttribute)~=true then return false end
-            return not LocalTargets.IsRealPlayerCharacter(model)
-        end
-
         function LocalTargets.CanCloneSource(model)
             if not model or not model:IsA("Model") then return false end
             local source=Workspace:FindFirstChild("Players")
             return source~=nil and model:IsDescendantOf(source)
         end
-
-        function LocalTargets.GetCandidates()
-            local out={}
+        function LocalTargets.IsAllowedTarget(model)
+            if not model or not model:IsA("Model") or LocalTargets.IsRealPlayerCharacter(model) then return false end
             local folder=Workspace:FindFirstChild(LocalTargets.TargetFolderName)
-            if folder then
-                for _,m in ipairs(folder:GetChildren()) do
-                    if LocalTargets.IsAllowedTarget(m) then table.insert(out,m) end
-                end
-            end
-            return out
+            if not folder or not model:IsDescendantOf(folder) then return false end
+            if model:GetAttribute(LocalTargets.ManagedDummyAttribute)~=true then return false end
+            local kind=model:GetAttribute("LvkHubCandidateKind")
+            return kind==nil or kind==LocalTargets.CandidateKind
         end
-
-        function LocalTargets.GetWatchRoots()
-            local roots={}
-            local f=Workspace:FindFirstChild(LocalTargets.TargetFolderName)
-            if f then table.insert(roots,f) end
-            return roots
-        end
-
         function LocalTargets.Describe(model)
-            if LocalTargets.IsAllowedTarget(model) then return true,"allowed local test dummy (fallback)" end
+            if LocalTargets.IsAllowedTarget(model) then return true,"authorized local practice target (fallback)" end
             if LocalTargets.IsRealPlayerCharacter(model) then return false,"real Player.Character excluded" end
-            return false,"outside managed TestPlayers fallback"
+            return false,"candidate rejected by local-practice fallback"
         end
-
         Restrictions={
             Name="LvkHubLocalPracticeFallback",
-            FailClosed=false,
+            Version=2,
             Targets=LocalTargets,
             OtherPlayerCount=function()
                 local n=0
@@ -112,27 +93,41 @@ local ok,err=pcall(function()
     shared.LvkHubRestrictions=Restrictions
     shared.LvkHubTargetRestrictions=Restrictions.Targets
 
-    local Registry=loadModule("src/Core/RegistryV2.lua")
-    loadModule("src/Core/RegistryBootstrap.lua")(Registry)
-    loadModule("src/Core/RegistryRuntimeFix.lua")(Registry)
+    ------------------------------------------------------------------------
+    -- 2) REGISTRY: discovery/cache only.
+    ------------------------------------------------------------------------
+    local MakeRegistry=loadModule("src/Core/RegistryV3.lua")
+    local Registry=MakeRegistry(Restrictions.Targets)
+
+    ------------------------------------------------------------------------
+    -- 3) TARGET PROVIDER: the only target API Combat/Visuals should consume.
+    ------------------------------------------------------------------------
+    local MakeTargetProvider=loadModule("src/Core/TargetProvider.lua")
+    local TargetProvider=MakeTargetProvider(Registry,Restrictions.Targets)
+    shared.LvkHubTargetProvider=TargetProvider
 
     local MakeUI=loadModule("src/UI/Main.lua")
     local UI=MakeUI(State)
     loadModule("src/UI/Enhancements.lua")(State,UI)
 
-    loadModule("src/Combat/MainV4.lua")(State,Registry,UI)
-    loadModule("src/Combat/WeaponSystemDummyAdapterV3.lua")(State,Registry,UI)
+    ------------------------------------------------------------------------
+    -- Target-facing modules receive TargetProvider, never raw Registry.
+    ------------------------------------------------------------------------
+    loadModule("src/Combat/MainV4.lua")(State,TargetProvider,UI)
+    local LegacyPracticeAdapter=loadModule("src/Combat/WeaponSystemDummyAdapterV3.lua")
+    loadModule("src/Combat/WeaponSystemTargetAdapterV4.lua")(State,TargetProvider,UI,LegacyPracticeAdapter)
+
+    -- Session/local-only modules do not need target authorization.
     loadModule("src/Combat/SoloWeaponMods.lua")(State,Registry,UI)
     loadModule("src/Combat/SoloNoSpread.lua")(State,Registry,UI)
-
     loadModule("src/Movement/MainV2.lua")(State,Registry,UI)
 
-    loadModule("src/Visuals/UnifiedTestVisualsV5.lua")(State,Registry,UI)
-    loadModule("src/Visuals/ChamsWallCheckV1.lua")(State,Registry,UI)
-    loadModule("src/Visuals/PreviewV11.lua")(State,Registry,UI)
-    loadModule("src/Visuals/PreviewLocalPlayerV3.lua")(State,Registry,UI)
-    loadModule("src/Visuals/PracticeOverlayV2.lua")(State,Registry,UI)
-    loadModule("src/Visuals/RuntimeConsistencyFix.lua")(State,Registry,UI)
+    loadModule("src/Visuals/UnifiedTestVisualsV5.lua")(State,TargetProvider,UI)
+    loadModule("src/Visuals/ChamsWallCheckV1.lua")(State,TargetProvider,UI)
+    loadModule("src/Visuals/PreviewV11.lua")(State,TargetProvider,UI)
+    loadModule("src/Visuals/PreviewLocalPlayerV3.lua")(State,TargetProvider,UI)
+    loadModule("src/Visuals/PracticeOverlayV2.lua")(State,TargetProvider,UI)
+    loadModule("src/Visuals/RuntimeConsistencyFix.lua")(State,TargetProvider,UI)
 
     loadModule("src/Vehicle/Main.lua")(State,Registry,UI)
 
@@ -147,36 +142,32 @@ local ok,err=pcall(function()
     loadModule("src/Local/GunshotReplacementV1.lua")(State,Registry,UI)
     loadModule("src/Local/BulletTracerV8.lua")(State,Registry,UI)
     loadModule("src/UI/LocalOrderPolish.lua")(State,UI)
-    loadModule("src/Local/DummyHitSoundV2.lua")(State,Registry,UI)
+    loadModule("src/Local/DummyHitSoundV2.lua")(State,TargetProvider,UI)
     loadModule("src/Local/TrailGlow.lua")(State,Registry,UI)
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
     loadModule("src/Vehicle/VehicleStatusPolish.lua")(State,Registry,UI)
 
-    loadModule("src/UI/Keybinds.lua")(State,Registry,UI)
-    loadModule("src/UI/DummyTargetInfo.lua")(State,Registry,UI)
+    loadModule("src/UI/Keybinds.lua")(State,TargetProvider,UI)
+    loadModule("src/UI/DummyTargetInfo.lua")(State,TargetProvider,UI)
     loadModule("src/UI/CompactLabels.lua")(State,UI)
     loadModule("src/UI/LocalPopupPolishV6.lua")(State,UI)
-    -- Keep the original smooth CombatV4 FOV circle + its rotating animation.
-    -- FOVThermalRingV3 is intentionally not loaded because its segmented ring
-    -- can look pixelated at larger radii/resolutions.
     loadModule("src/UI/SoloSurvivalToLocal.lua")(State,UI)
 
     loadModule("src/Core/YokaiPolish.lua")(UI)
     loadModule("src/Core/YokaiBlueTheme.lua")(UI)
 
-    -- Final layout/docking after every frame/popup owner exists.
     loadModule("src/UI/LayoutFinalV4.lua")(State,UI)
     loadModule("src/UI/DockBelowMovementV4.lua")(State,UI)
     loadModule("src/UI/DragPolishV2.lua")(State,UI)
     loadModule("src/UI/WatermarkV4.lua")(State,UI)
 
-    -- Final ownership cleanup: removes only obsolete LvkHub-owned runtime
-    -- overlays/highlights/vehicle markers. Current V5 owners are preserved.
-    loadModule("src/Core/RuntimeOwnershipGuardV1.lua")(State,Registry,UI)
+    loadModule("src/Core/RuntimeOwnershipGuardV1.lua")(State,TargetProvider,UI)
 
     shared.LvkHubExe={
         State=State,
         Registry=Registry,
+        TargetProvider=TargetProvider,
+        Targets=TargetProvider,
         UI=UI,
         Restrictions=Restrictions,
         TargetRestrictions=Restrictions.Targets,
