@@ -47,7 +47,10 @@ return function(State, Registry, UI)
         local dragging=false
         local function sync()
             local c=cfg.CarColor
-            if typeof(c)=="Color3" then knob.Position=UDim2.new(select(1,c:ToHSV()),0,.5,0) end
+            if typeof(c)=="Color3" then
+                local h=select(1,c:ToHSV())
+                knob.Position=UDim2.new(h,0,.5,0)
+            end
         end
         local function setFromX(x)
             local h=math.clamp((x-bar.AbsolutePosition.X)/math.max(1,bar.AbsoluteSize.X),0,1)
