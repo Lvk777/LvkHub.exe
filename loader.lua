@@ -171,6 +171,10 @@ local ok,err=pcall(function()
     loadModule("src/UI/DragPolishV2.lua")(State,UI)
     loadModule("src/UI/WatermarkV4.lua")(State,UI)
 
+    -- Final ownership cleanup: removes only obsolete LvkHub-owned runtime
+    -- overlays/highlights/vehicle markers. Current V5 owners are preserved.
+    loadModule("src/Core/RuntimeOwnershipGuardV1.lua")(State,Registry,UI)
+
     shared.LvkHubExe={
         State=State,
         Registry=Registry,
