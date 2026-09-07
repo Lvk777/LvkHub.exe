@@ -31,8 +31,8 @@ return function(State)
 
     local sound=Instance.new("Sound")
     sound.Name="LvkHubConfirmedHitSound"
-    sound.SoundId="rbxassetid://160715357"
-    sound.Volume=.7
+    sound.SoundId="rbxassetid://91546829095879"
+    sound.Volume=.85
     sound.Parent=Workspace.CurrentCamera or Workspace
 
     Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
