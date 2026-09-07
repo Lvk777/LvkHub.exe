@@ -1,6 +1,4 @@
 -- LvkHub.exe loader
--- Clean Yokai-style build with only the requested categories/features.
-
 if shared.LvkHubExeLoaded then
     local ok,parent=pcall(function() return (gethui and gethui()) or game:GetService("CoreGui") end)
     if ok and parent then
@@ -23,39 +21,55 @@ local ok,err=pcall(function()
     local State=loadModule("src/Core/State.lua")
 
     -- =====================================================================
-    -- ISOLATED TARGET RESTRICTIONS
-    -- RegistryV2 is fail-closed: if this file is missing or fails to load,
-    -- target-dependent Combat/Visuals receive ZERO registered targets.
-    -- There is intentionally NO real-player fallback.
+    -- CENTRALIZED RESTRICTIONS FOLDER
+    -- Fail-closed fallback: deleting/missing restrictions never enables real
+    -- Player.Character targeting and never enables solo-gated mutations.
     -- =====================================================================
-    local TargetRestrictions=nil
+    local Restrictions=nil
     local policyOK,policyResult=pcall(function()
-        return loadModule("src/Core/TargetRestrictions.lua")
+        return loadModule("src/Restrictions/Policy.lua")
     end)
-    if policyOK and type(policyResult)=="table" then
-        TargetRestrictions=policyResult
+    if policyOK and type(policyResult)=="table" then Restrictions=policyResult end
+    if not Restrictions then
+        Restrictions={
+            Name="LvkHubRestrictionsFallback",
+            FailClosed=true,
+            Targets={
+                Mode="DENY_ALL",
+                IsAllowedTarget=function() return false end,
+                IsRealPlayerCharacter=function() return true end,
+                CanCloneSource=function() return false end,
+                Describe=function() return false,"restrictions missing: fail closed" end,
+            },
+            OtherPlayerCount=function() return math.huge end,
+            SoloWeaponModsAllowed=function() return false end,
+            VehicleBringAllowed=function() return false end,
+            RealPlayerInSeat=function() return true end,
+        }
     end
-    shared.LvkHubTargetRestrictions=TargetRestrictions
+    shared.LvkHubRestrictions=Restrictions
+    shared.LvkHubTargetRestrictions=Restrictions.Targets
 
     local Registry=loadModule("src/Core/RegistryV2.lua")
     loadModule("src/Core/RegistryBootstrap.lua")(Registry)
 
     local MakeUI=loadModule("src/UI/Main.lua")
     local UI=MakeUI(State)
+    loadModule("src/UI/Enhancements.lua")(State,UI)
 
-    loadModule("src/Combat/MainV3.lua")(State,Registry,UI)
+    loadModule("src/Combat/MainV4.lua")(State,Registry,UI)
     loadModule("src/Combat/WeaponSystemDummyAdapterV3.lua")(State,Registry,UI)
-
-    -- HARD-GATED SOLO SESSION MODS.
-    -- The module itself contains the isolated Players-service guard and performs
-    -- no weapon writes whenever any other real Roblox Player is present.
     loadModule("src/Combat/SoloWeaponMods.lua")(State,Registry,UI)
 
-    loadModule("src/Movement/Main.lua")(State,Registry,UI)
+    loadModule("src/Movement/MainV2.lua")(State,Registry,UI)
 
-    -- Single TestPlayers renderer. V4 owns ESP/Chams/boxes/tracers/preview/CarESP.
+    -- Unified dummy visuals. Vehicle renderer still lives here; its controls are
+    -- re-homed to the Vehicle window by src/Vehicle/Main.lua.
     loadModule("src/Visuals/UnifiedTestVisualsV4.lua")(State,Registry,UI)
     loadModule("src/Visuals/PreviewV4CameraFix.lua")(UI)
+    loadModule("src/UI/VisualPopupDock.lua")(State,UI)
+
+    loadModule("src/Vehicle/Main.lua")(State,Registry,UI)
 
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
@@ -63,6 +77,10 @@ local ok,err=pcall(function()
     loadModule("src/Local/ConfirmedHitSound.lua")(State)
     loadModule("src/Local/TrailGlow.lua")(State,Registry,UI)
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
+
+    loadModule("src/UI/Keybinds.lua")(State,UI)
+    loadModule("src/UI/DummyTargetInfo.lua")(State,Registry,UI)
+
     loadModule("src/Core/YokaiPolish.lua")(UI)
     loadModule("src/Core/YokaiBlueTheme.lua")(UI)
 
@@ -70,7 +88,8 @@ local ok,err=pcall(function()
         State=State,
         Registry=Registry,
         UI=UI,
-        TargetRestrictions=TargetRestrictions,
+        Restrictions=Restrictions,
+        TargetRestrictions=Restrictions.Targets,
     }
 end)
 
