@@ -1,7 +1,8 @@
 -- LvkHub.exe WeaponSystem dummy adapter
 -- Local Workspace.TestPlayers practice only.
--- This module patches the exported WeaponShotBuilder table used by the local
--- WeaponViewmodelController. It never targets Roblox Player.Character models.
+-- WeaponShotBuilder is observed as the shot hook, but the real direction returned
+-- to the game is preserved. Silent Aim / Magic Bullets are simulated only against
+-- local TestPlayers, so Roblox Player.Character models are never redirected to.
 
 return function(State, Registry, UI)
     local Players=game:GetService("Players")
@@ -19,21 +20,15 @@ return function(State, Registry, UI)
         return Registry.PracticeAllowed and Registry.PracticeAllowed() or false
     end
 
-    local function aimAPI()
-        return shared.LvkHubDummyAimAPI
-    end
-
     local function chooseTarget(requireVisible)
-        local api=aimAPI()
+        local api=shared.LvkHubDummyAimAPI
         if api and type(api.ChooseTarget)=="function" then
             return api.ChooseTarget(requireVisible)
         end
         return nil
     end
 
-    -- ---------------------------------------------------------------------
-    -- Small local toast used for dummy hit feedback.
-    -- ---------------------------------------------------------------------
+    -- Small local toast ----------------------------------------------------
     local toastHolder=UI.Gui:FindFirstChild("LvkHubDummyHitToasts")
     if toastHolder then toastHolder:Destroy() end
     toastHolder=Instance.new("Frame")
@@ -91,10 +86,7 @@ return function(State, Registry, UI)
         end)
     end
 
-    -- ---------------------------------------------------------------------
-    -- Inventory Viewer: reads only LvkHubDummyInventory stored inside the
-    -- local clone. It never follows SourceCharacter or reads Player.Backpack.
-    -- ---------------------------------------------------------------------
+    -- Inventory Viewer -----------------------------------------------------
     UI.Section(page,"DUMMY FEEDBACK")
     UI.Toggle(page,"Hit Notifications",function() return State.Combat.DummyHitNotifications end,function(v)
         State.Combat.DummyHitNotifications=v
@@ -140,9 +132,7 @@ return function(State, Registry, UI)
         for i=1,4 do slotLabels[i].Text="Slot "..i..": "..tostring(slots[i] or "Empty") end
     end
 
-    -- ---------------------------------------------------------------------
-    -- WeaponSystem discovery.
-    -- ---------------------------------------------------------------------
+    -- WeaponSystem discovery ----------------------------------------------
     local function findWeaponShotBuilder()
         local ps=LP:FindFirstChild("PlayerScripts")
         if not ps then return nil end
@@ -258,26 +248,16 @@ return function(State, Registry, UI)
         end
     end
 
-    local function raycastDummy(origin,direction,throughWalls)
+    local function raycastNormalDummy(origin,direction)
         if typeof(origin)~="Vector3" or typeof(direction)~="Vector3" or direction.Magnitude<=0 then return end
-        local maxDistance=20000
         local params=RaycastParams.new()
         params.IgnoreWater=true
-
-        if throughWalls then
-            local folder=Registry.TestPlayersFolder or Workspace:FindFirstChild("TestPlayers")
-            if not folder then return end
-            params.FilterType=Enum.RaycastFilterType.Include
-            params.FilterDescendantsInstances={folder}
-        else
-            params.FilterType=Enum.RaycastFilterType.Exclude
-            local exclude={}
-            if LP.Character then table.insert(exclude,LP.Character) end
-            if Workspace.CurrentCamera then table.insert(exclude,Workspace.CurrentCamera) end
-            params.FilterDescendantsInstances=exclude
-        end
-
-        local result=Workspace:Raycast(origin,direction.Unit*maxDistance,params)
+        params.FilterType=Enum.RaycastFilterType.Exclude
+        local exclude={}
+        if LP.Character then table.insert(exclude,LP.Character) end
+        if Workspace.CurrentCamera then table.insert(exclude,Workspace.CurrentCamera) end
+        params.FilterDescendantsInstances=exclude
+        local result=Workspace:Raycast(origin,direction.Unit*20000,params)
         if not result then return end
         local model=dummyFromInstance(result.Instance)
         if model then applyDummyHit(model,result.Instance) end
@@ -303,6 +283,9 @@ return function(State, Registry, UI)
         originalResolve=t.ResolveBaseDirection
         originalSpread=t.GetSpreadDirection
 
+        -- ResolveBaseDirection is used only as a reliable local shot context hook.
+        -- We preserve its original return value, so outgoing game/server shot data
+        -- is not redirected by this dummy practice adapter.
         t.ResolveBaseDirection=function(p1)
             local base=originalResolve(p1)
             local origin=p1 and (p1.shotOrigin or p1.serverShotOrigin) or nil
@@ -320,31 +303,28 @@ return function(State, Registry, UI)
                 target,targetPart=chooseTarget(State.Combat.WallCheck==true)
             end
 
-            if origin and target and targetPart and Registry.IsBot(target) then
-                local delta=targetPart.Position-origin
-                if delta.Magnitude>0.001 then
-                    shotContext={origin=origin,target=target,part=targetPart,throughWalls=throughWalls,time=os.clock()}
-                    return delta.Unit
-                end
-            end
-
-            shotContext={origin=origin,target=nil,part=nil,throughWalls=false,time=os.clock()}
+            shotContext={
+                origin=origin,
+                target=(target and Registry.IsBot(target)) and target or nil,
+                part=targetPart,
+                throughWalls=throughWalls,
+                time=os.clock(),
+            }
             return base
         end
 
+        -- Preserve the real spread/direction. For local dummies only, simulate the
+        -- practice hit selected by Silent Aim/Magic Bullets. With neither enabled,
+        -- a normal ray against the actual returned direction detects manual hits.
         t.GetSpreadDirection=function(baseDirection,spreadState)
+            local result=originalSpread(baseDirection,spreadState)
             local ctx=shotContext
-            local result=nil
-            if ctx and ctx.target and ctx.part and ctx.origin and os.clock()-ctx.time<0.30 and Registry.IsBot(ctx.target) then
-                local delta=ctx.part.Position-ctx.origin
-                result=delta.Magnitude>0.001 and delta.Unit or originalSpread(baseDirection,spreadState)
-            else
-                result=originalSpread(baseDirection,spreadState)
-            end
-
-            if ctx and ctx.origin and result and os.clock()-ctx.time<0.30 then
-                local through=ctx.target~=nil and ctx.throughWalls==true
-                task.defer(raycastDummy,ctx.origin,result,through)
+            if ctx and ctx.origin and os.clock()-ctx.time<0.30 then
+                if ctx.target and ctx.part and Registry.IsBot(ctx.target) then
+                    task.defer(applyDummyHit,ctx.target,ctx.part)
+                elseif result then
+                    task.defer(raycastNormalDummy,ctx.origin,result)
+                end
             end
             return result
         end
@@ -354,6 +334,7 @@ return function(State, Registry, UI)
             Builder=builder,
             Installed=true,
             DummyOnly=true,
+            PreservesRealShotDirection=true,
         }
         installed=true
         return true
@@ -362,7 +343,7 @@ return function(State, Registry, UI)
     task.spawn(function()
         for _=1,40 do
             if install() then
-                notify("WeaponSystem adapter","Silent Aim / Magic Bullets ready for TestPlayers")
+                notify("WeaponSystem adapter","Dummy Silent Aim / Magic Bullets ready")
                 break
             end
             task.wait(.25)
