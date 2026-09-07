@@ -29,6 +29,12 @@ local ok,err=pcall(function()
 
     loadModule("src/Combat/MainV3.lua")(State,Registry,UI)
     loadModule("src/Combat/WeaponSystemDummyAdapterV3.lua")(State,Registry,UI)
+
+    -- HARD-GATED SOLO SESSION MODS.
+    -- The module itself contains the isolated Players-service guard and performs
+    -- no weapon writes whenever any other real Roblox Player is present.
+    loadModule("src/Combat/SoloWeaponMods.lua")(State,Registry,UI)
+
     loadModule("src/Movement/Main.lua")(State,Registry,UI)
 
     -- Single TestPlayers renderer. V4 owns ESP/Chams/boxes/tracers/preview/CarESP.
