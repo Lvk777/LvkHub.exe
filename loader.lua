@@ -114,7 +114,7 @@ local ok,err=pcall(function()
     -- Target-facing modules receive TargetProvider, never raw Registry.
     ------------------------------------------------------------------------
     loadModule("src/Combat/MainV4.lua")(State,TargetProvider,UI)
-    loadModule("src/UI/FOVThermalRingV2.lua")(State,UI)
+    loadModule("src/UI/FOVThermalRingV3.lua")(State,UI)
     local LegacyPracticeAdapter=loadModule("src/Combat/WeaponSystemDummyAdapterV3.lua")
     loadModule("src/Combat/WeaponSystemTargetAdapterV4.lua")(State,TargetProvider,UI,LegacyPracticeAdapter)
 
