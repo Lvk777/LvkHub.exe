@@ -6,10 +6,14 @@ return function(State, Registry, UI)
     local Players=game:GetService("Players")
 
     local LP=Players.LocalPlayer
-    local crossNames={CrossL=true,CrossR=true,CrossT=true,CrossB=true}
+    local globalCrossNames={
+        LvkCrossL2=true,LvkCrossR2=true,LvkCrossT2=true,LvkCrossB2=true,
+        CrossL=true,CrossR=true,CrossT=true,CrossB=true,
+    }
+    local previewCrossNames={CrossL=true,CrossR=true,CrossT=true,CrossB=true}
 
     ------------------------------------------------------------------------
-    -- Crosshair must never render over/inside the Visuals Preview card.
+    -- Custom crosshair belongs to the real screen only, never the preview.
     ------------------------------------------------------------------------
     local function pointInside(frame,point)
         if not frame or not frame.Visible then return false end
@@ -18,33 +22,40 @@ return function(State, Registry, UI)
         return point.X>=p.X and point.X<=p.X+s.X and point.Y>=p.Y and point.Y<=p.Y+s.Y
     end
 
+    local function getPreview()
+        return UI.Gui:FindFirstChild("LvkHubVisualsDummyPreview")
+            or UI.Gui:FindFirstChild("LvkHubUnifiedPreviewV4")
+    end
+
     local function fixCrosshairPreview()
-        local preview=UI.Gui:FindFirstChild("LvkHubUnifiedPreviewV4")
+        local preview=getPreview()
         local cam=Workspace.CurrentCamera
         if not cam then return end
         local center=cam.ViewportSize/2
         local covered=preview and pointInside(preview,center) or false
 
-        for name in pairs(crossNames) do
+        -- Real crosshair stays behind the preview card if they overlap.
+        for name in pairs(globalCrossNames) do
             local line=UI.Gui:FindFirstChild(name)
             if line and line:IsA("GuiObject") then
-                -- Preview uses ZIndex >= 70; keep the real crosshair behind it.
                 line.ZIndex=60
                 if covered then line.Visible=false end
             end
         end
 
-        -- Defensive cleanup in case an older preview module copied crosshair pieces.
+        -- PreviewV11 intentionally mirrored the crosshair. User requested that
+        -- the preview never show it, so force those preview-only pieces off.
         if preview then
             for _,obj in ipairs(preview:GetDescendants()) do
-                if crossNames[obj.Name] and obj:IsA("GuiObject") then obj.Visible=false end
+                if previewCrossNames[obj.Name] and obj:IsA("GuiObject") then
+                    obj.Visible=false
+                end
             end
         end
     end
 
     ------------------------------------------------------------------------
-    -- Car ESP: when OFF, every Lvk/Yokai car marker is forced OFF, including
-    -- markers inherited by cars that spawn after the toggle was disabled.
+    -- Car ESP OFF must stay OFF for cars that spawn later too.
     ------------------------------------------------------------------------
     local function isOurCarMarker(obj)
         local n=obj.Name
@@ -70,14 +81,16 @@ return function(State, Registry, UI)
     end
 
     ------------------------------------------------------------------------
-    -- Chams wall-check from the character, not the camera.
-    -- Visible = configured green, obstructed = configured red.
-    -- Current combat focus remains blue.
+    -- Chams wall-check from LocalPlayer CHARACTER, not camera.
+    -- Several body sample points are checked so a genuinely exposed part can
+    -- count as visible. Hidden chams use the configured hidden/red color.
     ------------------------------------------------------------------------
     local function characterOrigin()
         local ch=LP.Character
         if not ch then return nil end
-        return ch:FindFirstChild("Head") or ch:FindFirstChild("HumanoidRootPart") or ch:FindFirstChildWhichIsA("BasePart")
+        return ch:FindFirstChild("Head")
+            or ch:FindFirstChild("HumanoidRootPart")
+            or ch:FindFirstChildWhichIsA("BasePart")
     end
 
     local function visibleFromCharacter(model)
@@ -87,7 +100,7 @@ return function(State, Registry, UI)
         local candidates={
             model:FindFirstChild("Head"),
             model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso"),
-            Registry.RootOf and Registry.RootOf(model) or nil,
+            model:FindFirstChild("HumanoidRootPart"),
         }
 
         local params=RaycastParams.new()
@@ -117,16 +130,22 @@ return function(State, Registry, UI)
             if Registry.IsBot and Registry.IsBot(model) then
                 local h=model:FindFirstChild("LvkHubUnifiedV5Chams")
                 if h and h:IsA("Highlight") and h.Enabled then
-                    local focused=State.Combat
+                    local combatFocus=State.Combat
                         and State.Combat.SelectedBot==model
                         and (State.Combat.Aimbot or State.Combat.SilentAim or State.Combat.MagicBullets or State.Combat.HitBoxes)
 
                     local color
-                    if focused then
+                    if combatFocus then
                         color=UI.Accent
-                    elseif cfg.ESPWallCheck==true and (State.Visuals.Chams or State.Visuals.ESP) then
-                        color=visibleFromCharacter(model) and cfg.ESPVisibleColor or cfg.ESPHiddenColor
-                    elseif State.Visuals.Chams and not State.Visuals.ESP then
+                    elseif State.Visuals.Chams==true and cfg.ChamsWallCheck~=false then
+                        color=visibleFromCharacter(model)
+                            and (cfg.ChamsColor or cfg.ESPVisibleColor or Color3.fromRGB(55,235,95))
+                            or (cfg.ChamsHiddenColor or cfg.ESPHiddenColor or Color3.fromRGB(245,65,65))
+                    elseif State.Visuals.ESP==true and cfg.ESPWallCheck==true then
+                        color=visibleFromCharacter(model)
+                            and (cfg.ESPVisibleColor or Color3.fromRGB(55,235,95))
+                            or (cfg.ESPHiddenColor or Color3.fromRGB(245,65,65))
+                    elseif State.Visuals.Chams==true then
                         color=cfg.ChamsColor
                     end
 
@@ -139,13 +158,17 @@ return function(State, Registry, UI)
         end
     end
 
+    shared.LvkHubFinalChamsVisibleFromCharacter=visibleFromCharacter
+
     local carTimer=0
     RunService.RenderStepped:Connect(function(dt)
+        -- This module is loaded after Preview/PracticeOverlay/Chams patches, so
+        -- these are the final visual-state corrections each frame.
         fixCrosshairPreview()
         fixDummyChams()
 
         carTimer+=dt
-        if carTimer>=.15 then
+        if carTimer>=.12 then
             carTimer=0
             forceCarEspOff()
         end
