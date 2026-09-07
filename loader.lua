@@ -133,6 +133,7 @@ local ok,err=pcall(function()
     loadModule("src/Visuals/PreviewV11.lua")(State,Registry,UI)
     loadModule("src/Visuals/PreviewLocalPlayerV3.lua")(State,Registry,UI)
     loadModule("src/Visuals/PracticeOverlayV2.lua")(State,Registry,UI)
+    loadModule("src/Visuals/RuntimeConsistencyFix.lua")(State,Registry,UI)
 
     loadModule("src/Vehicle/Main.lua")(State,Registry,UI)
 
