@@ -24,8 +24,24 @@ return function(State, Registry, UI)
     local noclipOriginal=setmetatable({}, {__mode="k"})
     local flyAttachment,flyVelocity,flyOrientation=nil,nil,nil
 
+    -- IMPORTANT: when Speed is OFF the hub must not write Humanoid.WalkSpeed at all.
+    -- The old code forced 16 every Heartbeat, which broke games that use Shift sprint
+    -- and could interfere with movement/jump controllers even with every toggle disabled.
+    local speedActive=false
+    local speedHumanoid=nil
+    local speedOriginal=nil
+
     local function character()
         return LP.Character, LP.Character and LP.Character:FindFirstChildOfClass("Humanoid"), LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function restoreSpeed()
+        if speedActive and speedHumanoid and speedHumanoid.Parent and speedOriginal~=nil then
+            pcall(function() speedHumanoid.WalkSpeed=speedOriginal end)
+        end
+        speedActive=false
+        speedHumanoid=nil
+        speedOriginal=nil
     end
 
     local function ensureFly(root)
@@ -80,8 +96,18 @@ return function(State, Registry, UI)
 
     RunService.Heartbeat:Connect(function()
         local ch,hum,root=character()
-        if hum then
-            hum.WalkSpeed=State.Movement.Speed and State.Movement.SpeedValue or 16
+
+        if State.Movement.Speed and hum then
+            if not speedActive or speedHumanoid~=hum then
+                restoreSpeed()
+                speedActive=true
+                speedHumanoid=hum
+                speedOriginal=hum.WalkSpeed
+            end
+            local wanted=State.Movement.SpeedValue or 32
+            if math.abs(hum.WalkSpeed-wanted)>.01 then hum.WalkSpeed=wanted end
+        elseif speedActive then
+            restoreSpeed()
         end
 
         if ch then
@@ -121,5 +147,11 @@ return function(State, Registry, UI)
                 if flat.Magnitude>0 then vroot.CFrame=CFrame.lookAt(vroot.Position,vroot.Position+flat.Unit) end
             end
         end
+    end)
+
+    LP.CharacterAdded:Connect(function()
+        restoreSpeed()
+        clearFly()
+        table.clear(noclipOriginal)
     end)
 end
