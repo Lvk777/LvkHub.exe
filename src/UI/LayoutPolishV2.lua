@@ -1,4 +1,7 @@
--- Window placement/clamping and dock positioning polish.
+-- Window placement and dock positioning polish.
+-- Important: category windows are clamped by the base UI only when drag ends.
+-- This module no longer force-clamps them every frame, avoiding the visible
+-- "jumping" effect while dragging near the top edge.
 return function(State, UI)
     local RunService=game:GetService("RunService")
     local Workspace=game:GetService("Workspace")
@@ -8,7 +11,7 @@ return function(State, UI)
         return cam and cam.ViewportSize or Vector2.new(1920,1080)
     end
 
-    local function clampFrame(frame)
+    local function clampAux(frame)
         if not frame or not frame.Parent or not frame.Visible then return end
         local size=frame.AbsoluteSize
         local pos=frame.AbsolutePosition
@@ -30,15 +33,18 @@ return function(State, UI)
         if timer<.05 then return end
         timer=0
 
-        local world=UI.Windows.World
+        local movement=UI.Windows.Movement
+        local visuals=UI.Windows.Visuals
         local utility=UI.Windows.Utility
         local vehicle=UI.Windows.Vehicle
         local target=UI.Gui:FindFirstChild("LvkHubDummyTargetInfo")
         local preview=UI.Gui:FindFirstChild("LvkHubUnifiedPreviewV4")
 
-        if not placed and world and utility and vehicle then
+        if not placed and visuals and utility and vehicle then
             local v=vp()
-            utility.Position=UDim2.fromOffset(world.AbsolutePosition.X,math.min(world.AbsolutePosition.Y+world.AbsoluteSize.Y+8,v.Y-math.max(37,utility.AbsoluteSize.Y)-4))
+            -- Utility starts immediately to the right of Visuals, same row.
+            local ux=math.min(visuals.AbsolutePosition.X+visuals.AbsoluteSize.X+10,v.X-utility.AbsoluteSize.X-4)
+            utility.Position=UDim2.fromOffset(math.max(4,ux),visuals.AbsolutePosition.Y)
 
             if target then
                 local x=math.min(vehicle.AbsolutePosition.X+vehicle.AbsoluteSize.X+8,v.X-target.AbsoluteSize.X-4)
@@ -52,29 +58,24 @@ return function(State, UI)
             placed=true
         end
 
-        -- Dock every ••• panel below the visible bottom of Utility, with extra spacing.
+        -- All ••• panels are docked in the free space below Movement.
         local panel=UI.ActiveDockedPanel
-        if panel and panel.Parent and utility then
+        if panel and panel.Parent and movement then
             local v=vp()
-            local utilityPage=UI.Pages.Utility
-            local bottom=utility.AbsolutePosition.Y+utility.AbsoluteSize.Y
-            if utilityPage and utilityPage.Visible then
-                bottom=math.max(bottom,utilityPage.AbsolutePosition.Y+utilityPage.AbsoluteSize.Y)
-            end
-            local x=math.clamp(utility.AbsolutePosition.X,4,math.max(4,v.X-panel.AbsoluteSize.X-4))
-            local y=bottom+34
+            local x=math.clamp(movement.AbsolutePosition.X,4,math.max(4,v.X-panel.AbsoluteSize.X-4))
+            local y=movement.AbsolutePosition.Y+movement.AbsoluteSize.Y+12
             if y+panel.AbsoluteSize.Y>v.Y-4 then
-                -- Keep it below Utility whenever possible; otherwise use the lowest fully visible position.
-                y=math.max(bottom+8,v.Y-panel.AbsoluteSize.Y-4)
+                y=math.max(4,v.Y-panel.AbsoluteSize.Y-4)
             end
             panel.Position=UDim2.fromOffset(x,y)
         end
 
-        for _,w in pairs(UI.Windows) do clampFrame(w) end
-        clampFrame(vehicle)
-        clampFrame(target)
-        clampFrame(preview)
-        clampFrame(UI.ActiveDockedPanel)
+        -- Do not continuously clamp draggable category windows; Main.lua already
+        -- performs a single clamp when the drag ends. Only auxiliary floating cards
+        -- are kept inside the screen.
+        clampAux(target)
+        clampAux(preview)
+        clampAux(UI.ActiveDockedPanel)
 
         if preview and State.Visuals.Preview==true and UI.Main.Visible==false then preview.Visible=false end
     end)
