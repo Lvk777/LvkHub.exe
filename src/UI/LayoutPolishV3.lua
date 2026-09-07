@@ -1,6 +1,7 @@
--- Startup-only placement for detached panels.
--- Target Info is aligned to the right of Vehicle and Visuals Preview directly below it.
--- No continuous position writes: after initial placement both panels remain freely draggable.
+-- Startup-only placement for main windows and detached panels.
+-- Utility and Vehicle swap their original positions.
+-- Target Info aligns to the Vehicle row height; Preview sits strictly below Target Info.
+-- No continuous position writes: everything remains draggable after startup.
 return function(State, UI)
     local Workspace=game:GetService("Workspace")
 
@@ -16,28 +17,44 @@ return function(State, UI)
     end
 
     task.spawn(function()
-        local deadline=os.clock()+4
-        local vehicle,target,preview
+        local deadline=os.clock()+5
+        local utility,vehicle,target,preview
         repeat
+            utility=UI.Windows and UI.Windows.Utility
             vehicle=UI.Windows and UI.Windows.Vehicle
             target=readyFrame("LvkHubDummyTargetInfo")
             preview=readyFrame("LvkHubVisualsDummyPreview")
-            if vehicle and vehicle.AbsoluteSize.X>10 and target and preview then break end
+            if utility and vehicle and utility.AbsoluteSize.X>10 and vehicle.AbsoluteSize.X>10 and target and preview then break end
             task.wait(.05)
         until os.clock()>deadline
-        if not vehicle or not target or not preview then return end
+        if not utility or not vehicle then return end
 
-        task.wait() -- let final text/layout sizes settle
+        task.wait(.12)
+
+        -- Exact startup swap: each window takes the other's original slot.
+        local utilityPos=utility.Position
+        local vehiclePos=vehicle.Position
+        utility.Position=vehiclePos
+        vehicle.Position=utilityPos
+
+        -- Let AbsolutePosition settle after the swap and after preview AutoSize.
+        task.wait(.12)
+        target=target or readyFrame("LvkHubDummyTargetInfo")
+        preview=preview or readyFrame("LvkHubVisualsDummyPreview")
+        if not target or not preview then return end
+
         local v=viewport()
-        local desiredX=vehicle.AbsolutePosition.X+vehicle.AbsoluteSize.X+8
+        -- Put the detached cards after the rightmost of Utility/Vehicle, but keep
+        -- the same top line as Vehicle so Target Info visually aligns with it.
+        local anchor=utility.AbsolutePosition.X>vehicle.AbsolutePosition.X and utility or vehicle
         local widest=math.max(target.AbsoluteSize.X,preview.AbsoluteSize.X)
+        local desiredX=anchor.AbsolutePosition.X+anchor.AbsoluteSize.X+8
         local x=math.clamp(desiredX,4,math.max(4,v.X-widest-4))
-        local y=math.clamp(vehicle.AbsolutePosition.Y,4,math.max(4,v.Y-target.AbsoluteSize.Y-4))
+        local y=math.max(4,vehicle.AbsolutePosition.Y)
         target.Position=UDim2.fromOffset(x,y)
 
-        task.wait()
-        local py=target.AbsolutePosition.Y+target.AbsoluteSize.Y+8
-        py=math.clamp(py,4,math.max(4,v.Y-preview.AbsoluteSize.Y-4))
-        preview.Position=UDim2.fromOffset(x,py)
+        task.wait(.08)
+        -- Never overlap Preview with Target Info. Do not bounce it upward.
+        preview.Position=UDim2.fromOffset(x,target.AbsolutePosition.Y+target.AbsoluteSize.Y+8)
     end)
 end
