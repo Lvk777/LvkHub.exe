@@ -11,8 +11,10 @@ return function(Registry, TargetPolicy)
         Targets=setmetatable({}, {__mode="k"}),
         Version=1,
     }
-    -- Compatibility alias so existing modules can stay almost unchanged.
+    -- Compatibility alias so existing target modules can stay almost unchanged.
     Provider.Bots=Provider.Targets
+    Provider.Vehicles=Registry and Registry.Vehicles or setmetatable({}, {__mode="k"})
+    Provider.VehicleFolder=Registry and Registry.VehicleFolder or nil
 
     local function policyReady()
         return type(TargetPolicy)=="table"
@@ -40,11 +42,18 @@ return function(Registry, TargetPolicy)
                 n+=1
             end
         end
+        Provider.VehicleFolder=Registry.VehicleFolder
+        Provider.Vehicles=Registry.Vehicles
         return n
     end
 
     function Provider.RefreshTargets()
         if Registry and type(Registry.RefreshTargets)=="function" then pcall(Registry.RefreshTargets) end
+        return Provider.Rebuild()
+    end
+
+    function Provider.Refresh()
+        if Registry and type(Registry.Refresh)=="function" then pcall(Registry.Refresh) end
         return Provider.Rebuild()
     end
 
@@ -110,6 +119,14 @@ return function(Registry, TargetPolicy)
 
     function Provider.GetSourceLabel()
         return Registry and Registry.GetSourceLabel and Registry.GetSourceLabel() or "TargetProvider"
+    end
+
+    function Provider.CountVehicles()
+        return Registry and Registry.CountVehicles and Registry.CountVehicles() or 0
+    end
+
+    function Provider.GetCandidateMeta(model)
+        return Registry and Registry.GetCandidateMeta and Registry.GetCandidateMeta(model) or nil
     end
 
     -- Compatibility methods used by current Combat/Visuals modules.
