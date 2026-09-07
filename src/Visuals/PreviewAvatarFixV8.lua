@@ -1,10 +1,9 @@
--- Robust Visuals Preview avatar renderer for vitor250407.
+-- Reliable Visuals Preview dummy.
 -- Preview-only: never inserted into Registry or used by Combat/ESP targeting.
 return function(State, Registry, UI)
     local Players=game:GetService("Players")
     local RunService=game:GetService("RunService")
 
-    local wanted="vitor250407"
     local busy=false
     local lastAttempt=0
 
@@ -24,90 +23,121 @@ return function(State, Registry, UI)
 
     local function fallback()
         local m=Instance.new("Model")
-        m.Name="LvkHubPreviewAvatarV8"
+        m.Name="LvkHubPreviewDummyV9"
         local skin=Color3.fromRGB(226,188,151)
+        local shirt=Color3.fromRGB(72,88,132)
+        local pants=Color3.fromRGB(31,35,43)
         local function part(name,size,pos,color)
-            local p=Instance.new("Part");p.Name=name;p.Size=size;p.CFrame=CFrame.new(pos);p.Anchored=true;p.CanCollide=false;p.Color=color;p.Material=Enum.Material.SmoothPlastic;p.Parent=m
+            local p=Instance.new("Part")
+            p.Name=name;p.Size=size;p.CFrame=CFrame.new(pos);p.Anchored=true;p.CanCollide=false
+            p.Color=color;p.Material=Enum.Material.SmoothPlastic;p.Parent=m
+            return p
         end
         part("Head",Vector3.new(1.6,1.3,1.3),Vector3.new(0,3.15,0),skin)
-        part("Torso",Vector3.new(2.2,2.1,1.05),Vector3.new(0,1.45,0),Color3.fromRGB(55,72,105))
+        part("Torso",Vector3.new(2.2,2.1,1.05),Vector3.new(0,1.45,0),shirt)
         part("Left Arm",Vector3.new(.82,2.05,.86),Vector3.new(-1.52,1.45,0),skin)
         part("Right Arm",Vector3.new(.82,2.05,.86),Vector3.new(1.52,1.45,0),skin)
-        part("Left Leg",Vector3.new(.95,2.15,.98),Vector3.new(-.6,-.7,0),Color3.fromRGB(31,35,43))
-        part("Right Leg",Vector3.new(.95,2.15,.98),Vector3.new(.6,-.7,0),Color3.fromRGB(31,35,43))
+        part("Left Leg",Vector3.new(.95,2.15,.98),Vector3.new(-.6,-.7,0),pants)
+        part("Right Leg",Vector3.new(.95,2.15,.98),Vector3.new(.6,-.7,0),pants)
         return m
     end
 
-    local function build()
-        local plr=Players:FindFirstChild(wanted)
-        if plr and plr.Character then
-            local old=plr.Character.Archivable;plr.Character.Archivable=true
-            local ok,m=pcall(function() return plr.Character:Clone() end)
-            plr.Character.Archivable=old
-            if ok and m then return m end
-        end
-        local okId,id=pcall(function() return Players:GetUserIdFromNameAsync(wanted) end)
-        if okId and id then
-            local okDesc,desc=pcall(function() return Players:GetHumanoidDescriptionFromUserId(id) end)
-            if okDesc and desc then
-                local okModel,m=pcall(function() return Players:CreateHumanoidModelFromDescription(desc,Enum.HumanoidRigType.R15) end)
-                if okModel and m then return m end
+    local function buildDummy()
+        local ok,model=pcall(function()
+            local desc=Instance.new("HumanoidDescription")
+            local result=Players:CreateHumanoidModelFromDescription(desc,Enum.HumanoidRigType.R15)
+            desc:Destroy()
+            return result
+        end)
+        if not ok or not model then return fallback() end
+
+        local skin=Color3.fromRGB(226,188,151)
+        local shirt=Color3.fromRGB(72,88,132)
+        local pants=Color3.fromRGB(31,35,43)
+        for _,p in ipairs(model:GetDescendants()) do
+            if p:IsA("BasePart") then
+                local n=p.Name:lower()
+                if n:find("head",1,true) or n:find("arm",1,true) or n:find("hand",1,true) then
+                    p.Color=skin
+                elseif n:find("torso",1,true) then
+                    p.Color=shirt
+                elseif n:find("leg",1,true) or n:find("foot",1,true) then
+                    p.Color=pants
+                end
+                p.Material=Enum.Material.SmoothPlastic
             end
         end
-        return fallback()
+        return model
+    end
+
+    local function renamePreviewText(frame)
+        for _,d in ipairs(frame:GetDescendants()) do
+            if d:IsA("TextLabel") then
+                local txt=tostring(d.Text or "")
+                if txt:lower():find("vitor250407",1,true) then
+                    d.Text=txt:gsub("vitor250407","PREVIEW DUMMY")
+                end
+            end
+        end
     end
 
     local function install()
         if busy then return end
         local frame=UI.Gui:FindFirstChild("LvkHubVisualsDummyPreview")
         if not frame then return end
+        renamePreviewText(frame)
+
         local vp=frame:FindFirstChildWhichIsA("ViewportFrame",true)
         if not vp then return end
         local world=vp:FindFirstChildWhichIsA("WorldModel")
         local cam=vp.CurrentCamera or vp:FindFirstChildWhichIsA("Camera")
         if not world or not cam then return end
 
-        local existing=world:FindFirstChild("LvkHubPreviewAvatarV8")
-        local visiblePart=existing and existing:FindFirstChildWhichIsA("BasePart",true)
-        if existing and visiblePart then return end
+        local existing=world:FindFirstChild("LvkHubPreviewDummyV9")
+        if existing and existing:FindFirstChildWhichIsA("BasePart",true) then return end
 
         busy=true
         task.spawn(function()
-            local model=build()
-            if model then
-                for _,x in ipairs(world:GetChildren()) do if x:IsA("Model") then x:Destroy() end end
-                model.Name="LvkHubPreviewAvatarV8"
-                sanitize(model)
-                model.Parent=world
-
-                -- Translate the model so its bounding-box center is the viewport origin.
-                local ok,boxCF,size=pcall(function() return model:GetBoundingBox() end)
-                if ok then
-                    local pivot=model:GetPivot()
-                    model:PivotTo(CFrame.new(-boxCF.Position)*pivot)
-                    local ok2,centerCF,size2=pcall(function() return model:GetBoundingBox() end)
-                    if ok2 then boxCF,size=centerCF,size2 end
-                else
-                    size=Vector3.new(4,6,2)
-                end
-
-                local center=boxCF and boxCF.Position or Vector3.zero
-                local d=math.max(7.2,size.Y*1.25,size.X*2.15,size.Z*3)
-                cam.FieldOfView=31
-                cam.CFrame=CFrame.lookAt(center+Vector3.new(0,size.Y*.02,-d),center+Vector3.new(0,size.Y*.02,0))
-                vp.CurrentCamera=cam
-                vp.Ambient=Color3.fromRGB(225,225,232)
-                vp.LightColor=Color3.fromRGB(255,255,255)
-                vp.LightDirection=Vector3.new(-1,-1,-1)
-                vp.Visible=true
+            for _,x in ipairs(world:GetChildren()) do
+                if x:IsA("Model") then x:Destroy() end
             end
+
+            local model=buildDummy()
+            model.Name="LvkHubPreviewDummyV9"
+            sanitize(model)
+            model.Parent=world
+
+            local ok,boxCF,size=pcall(function() return model:GetBoundingBox() end)
+            if not ok then
+                boxCF=CFrame.new(0,1.5,0)
+                size=Vector3.new(4,6,2)
+            end
+
+            local pivot=model:GetPivot()
+            model:PivotTo(CFrame.new(-boxCF.Position)*pivot)
+            local ok2,centerCF,size2=pcall(function() return model:GetBoundingBox() end)
+            if ok2 then boxCF,size=centerCF,size2 end
+
+            local center=boxCF.Position
+            local d=math.max(7.2,size.Y*1.25,size.X*2.15,size.Z*3)
+            cam.FieldOfView=31
+            cam.CFrame=CFrame.lookAt(center+Vector3.new(0,size.Y*.02,-d),center+Vector3.new(0,size.Y*.02,0))
+            vp.CurrentCamera=cam
+            vp.Ambient=Color3.fromRGB(225,225,232)
+            vp.LightColor=Color3.fromRGB(255,255,255)
+            vp.LightDirection=Vector3.new(-1,-1,-1)
+            vp.Visible=true
+
             lastAttempt=os.clock()
             busy=false
         end)
     end
 
-    task.delay(.35,install)
+    task.delay(.25,install)
     RunService.Heartbeat:Connect(function()
-        if os.clock()-lastAttempt>1.2 then lastAttempt=os.clock();install() end
+        if os.clock()-lastAttempt>1.2 then
+            lastAttempt=os.clock()
+            install()
+        end
     end)
 end
