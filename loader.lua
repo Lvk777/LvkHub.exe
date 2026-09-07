@@ -124,7 +124,6 @@ local ok,err=pcall(function()
     loadModule("src/Combat/WeaponSystemDummyAdapterV3.lua")(State,Registry,UI)
     loadModule("src/Combat/SoloWeaponMods.lua")(State,Registry,UI)
     loadModule("src/Combat/SoloNoSpread.lua")(State,Registry,UI)
-    loadModule("src/Combat/DummyHitFeedbackV4.lua")(State,Registry,UI)
 
     loadModule("src/Movement/MainV2.lua")(State,Registry,UI)
 
