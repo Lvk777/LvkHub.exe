@@ -1,4 +1,4 @@
--- UI additions: Vehicle window + a single docked options area below Utility.
+-- UI additions: Vehicle window + one stable draggable options panel below Combat.
 return function(State, UI)
     local UIS=game:GetService("UserInputService")
     local RunService=game:GetService("RunService")
@@ -10,6 +10,9 @@ return function(State, UI)
         c.Parent=obj
     end
 
+    ------------------------------------------------------------------------
+    -- Vehicle window.
+    ------------------------------------------------------------------------
     if not UI.Pages.Vehicle then
         local main=UI.Main
         local win=Instance.new("Frame")
@@ -21,7 +24,9 @@ return function(State, UI)
         win.ClipsDescendants=false
         win.Parent=main
         rounded(win,5)
-        local stroke=Instance.new("UIStroke"); stroke.Color=Color3.fromRGB(32,35,36); stroke.Parent=win
+        local stroke=Instance.new("UIStroke")
+        stroke.Color=Color3.fromRGB(32,35,36)
+        stroke.Parent=win
 
         local header=Instance.new("Frame")
         header.Name="Header"
@@ -74,26 +79,46 @@ return function(State, UI)
         page.AutomaticCanvasSize=Enum.AutomaticSize.Y
         page.CanvasSize=UDim2.new()
         page.Parent=win
+
         local pad=Instance.new("UIPadding")
-        pad.PaddingTop=UDim.new(0,5); pad.PaddingBottom=UDim.new(0,5); pad.PaddingLeft=UDim.new(0,5); pad.PaddingRight=UDim.new(0,5); pad.Parent=page
+        pad.PaddingTop=UDim.new(0,5)
+        pad.PaddingBottom=UDim.new(0,5)
+        pad.PaddingLeft=UDim.new(0,5)
+        pad.PaddingRight=UDim.new(0,5)
+        pad.Parent=page
+
         local list=Instance.new("UIListLayout")
-        list.Padding=UDim.new(0,3); list.SortOrder=Enum.SortOrder.LayoutOrder; list.Parent=page
+        list.Padding=UDim.new(0,3)
+        list.SortOrder=Enum.SortOrder.LayoutOrder
+        list.Parent=page
 
         local expanded=true
         local function resize()
-            if not expanded then page.Size=UDim2.new(1,0,0,0); win.Size=UDim2.fromOffset(220,37); return end
+            if not expanded then
+                page.Size=UDim2.new(1,0,0,0)
+                win.Size=UDim2.fromOffset(220,37)
+                return
+            end
             local h=math.clamp(list.AbsoluteContentSize.Y+10,0,430)
             page.Size=UDim2.new(1,0,0,h)
             win.Size=UDim2.fromOffset(220,37+h)
         end
         list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(resize)
         task.defer(resize)
-        arrow.MouseButton1Click:Connect(function() expanded=not expanded; arrow.Text=expanded and "▼" or "▶"; resize() end)
+        arrow.MouseButton1Click:Connect(function()
+            expanded=not expanded
+            arrow.Text=expanded and "▼" or "▶"
+            resize()
+        end)
 
         local dragging=false
         local startMouse,startPos
         header.InputBegan:Connect(function(input)
-            if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; startMouse=input.Position; startPos=win.Position end
+            if input.UserInputType==Enum.UserInputType.MouseButton1 then
+                dragging=true
+                startMouse=input.Position
+                startPos=win.Position
+            end
         end)
         UIS.InputChanged:Connect(function(input)
             if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then
@@ -101,34 +126,95 @@ return function(State, UI)
                 win.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
             end
         end)
-        UIS.InputEnded:Connect(function(input) if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+        UIS.InputEnded:Connect(function(input)
+            if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end
+        end)
 
         UI.Pages.Vehicle=page
         UI.Windows.Vehicle=win
     end
 
+    ------------------------------------------------------------------------
+    -- Shared ••• settings panel owner.
+    -- It is positioned ONCE under Combat and then the user is free to drag it.
+    -- No per-frame position writes = no blinking/fighting between modules.
+    ------------------------------------------------------------------------
     UI.ActiveDockedPanel=nil
+    local dragInstalled=setmetatable({}, {__mode="k"})
+
+    local function viewport()
+        local cam=Workspace.CurrentCamera
+        return cam and cam.ViewportSize or Vector2.new(1920,1080)
+    end
+
+    local function clampPanel(panel)
+        if not panel or not panel.Parent then return end
+        local v=viewport()
+        local p=panel.AbsolutePosition
+        local s=panel.AbsoluteSize
+        local dx,dy=0,0
+        if p.X<4 then dx=4-p.X end
+        if p.Y<4 then dy=4-p.Y end
+        if p.X+s.X>v.X-4 then dx=(v.X-4)-(p.X+s.X) end
+        if p.Y+36>v.Y-4 then dy=(v.Y-4)-(p.Y+36) end
+        if dx~=0 or dy~=0 then
+            panel.Position=UDim2.new(panel.Position.X.Scale,panel.Position.X.Offset+dx,panel.Position.Y.Scale,panel.Position.Y.Offset+dy)
+        end
+    end
 
     local function placeDockedPanel(panel)
         if not panel or not panel.Parent then return end
-        local utility=UI.Windows.Utility
-        local cam=Workspace.CurrentCamera
-        if not utility or not cam then return end
-        local p=utility.AbsolutePosition
-        local s=utility.AbsoluteSize
+        local combat=UI.Windows.Combat
+        if not combat then return end
+        local v=viewport()
         local ps=panel.AbsoluteSize
-        local vp=cam.ViewportSize
-        local x=math.clamp(p.X,4,math.max(4,vp.X-math.max(ps.X,214)-4))
-        local y=p.Y+s.Y+6
-        if y+math.max(ps.Y,44)>vp.Y-4 then y=math.max(4,p.Y-math.max(ps.Y,44)-6) end
+        local x=math.clamp(combat.AbsolutePosition.X,4,math.max(4,v.X-math.max(ps.X,214)-4))
+        local y=combat.AbsolutePosition.Y+combat.AbsoluteSize.Y+10
+        if y+math.max(ps.Y,44)>v.Y-4 then
+            y=math.max(4,v.Y-math.max(ps.Y,44)-4)
+        end
         panel.Position=UDim2.fromOffset(x,y)
+    end
+
+    local function makePanelDraggable(panel)
+        if not panel or dragInstalled[panel] then return end
+        dragInstalled[panel]=true
+        panel.Active=true
+
+        local dragging=false
+        local startMouse,startPos
+        panel.InputBegan:Connect(function(input)
+            if input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+            local localX=input.Position.X-panel.AbsolutePosition.X
+            local localY=input.Position.Y-panel.AbsolutePosition.Y
+            -- Header is the top 36 px. Leave the far-right close-button area alone.
+            if localY>=0 and localY<=36 and localX>=0 and localX<panel.AbsoluteSize.X-34 then
+                dragging=true
+                startMouse=input.Position
+                startPos=panel.Position
+            end
+        end)
+        UIS.InputChanged:Connect(function(input)
+            if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then
+                local d=input.Position-startMouse
+                panel.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
+            end
+        end)
+        UIS.InputEnded:Connect(function(input)
+            if input.UserInputType==Enum.UserInputType.MouseButton1 and dragging then
+                dragging=false
+                clampPanel(panel)
+            end
+        end)
     end
 
     function UI.CloseDockedPanel(panel)
         local current=UI.ActiveDockedPanel
         if panel and current~=panel then return end
         UI.ActiveDockedPanel=nil
-        if current and current.Parent then pcall(function() current:Destroy() end) end
+        if current and current.Parent then
+            pcall(function() current:Destroy() end)
+        end
     end
 
     function UI.OpenDockedPanel(panel)
@@ -139,14 +225,15 @@ return function(State, UI)
         UI.ActiveDockedPanel=panel
         panel.Parent=UI.Gui
         panel.Visible=UI.Main.Visible==true
+        makePanelDraggable(panel)
         task.defer(placeDockedPanel,panel)
     end
 
     RunService.RenderStepped:Connect(function()
         local panel=UI.ActiveDockedPanel
         if panel and panel.Parent then
+            -- Visibility only. Never rewrite Position here.
             panel.Visible=UI.Main.Visible==true
-            if panel.Visible then placeDockedPanel(panel) end
         elseif panel then
             UI.ActiveDockedPanel=nil
         end
