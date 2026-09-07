@@ -20,6 +20,7 @@ local State = {
         AimFOV = 180, ShowAimFOV = true,
         WallCheck = true,
         MagicThroughWalls = false,
+        AimbotSmoothness = 0.32,
         NoRecoil = false,
         InfiniteAmmo = false,
         FastReload = false,
@@ -27,6 +28,7 @@ local State = {
     },
     Utility = {
         AntiAFK = false, NoMenuFog = false,
+        FullHunger = false, FullThirst = false,
     },
     Local = {
         HitSound = false, GunChams = false, SelfChams = false,
