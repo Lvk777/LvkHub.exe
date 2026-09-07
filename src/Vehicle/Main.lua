@@ -13,6 +13,53 @@ return function(State, Registry, UI)
     UI.Number(page,"CarFly Speed",function() return State.Movement.CarFlySpeed or 90 end,function(v) State.Movement.CarFlySpeed=v end,10,400)
     UI.Toggle(page,"Car ESP",function() return State.Visuals.CarESP end,function(v) State.Visuals.CarESP=v end)
 
+    local cfg=State.Visuals._V4Config
+    if cfg then
+        local row,label=UI.Row(page,"Car ESP Color",38)
+        label.Size=UDim2.fromOffset(78,38)
+        local bar=Instance.new("Frame")
+        bar.Position=UDim2.fromOffset(86,11)
+        bar.Size=UDim2.new(1,-94,0,16)
+        bar.BackgroundColor3=Color3.new(1,1,1)
+        bar.BorderSizePixel=0
+        bar.Active=true
+        bar.Parent=row
+        local bc=Instance.new("UICorner"); bc.CornerRadius=UDim.new(0,4); bc.Parent=bar
+        local grad=Instance.new("UIGradient")
+        grad.Color=ColorSequence.new({
+            ColorSequenceKeypoint.new(0,Color3.fromRGB(255,0,0)),
+            ColorSequenceKeypoint.new(1/6,Color3.fromRGB(255,255,0)),
+            ColorSequenceKeypoint.new(2/6,Color3.fromRGB(0,255,0)),
+            ColorSequenceKeypoint.new(3/6,Color3.fromRGB(0,255,255)),
+            ColorSequenceKeypoint.new(4/6,Color3.fromRGB(0,0,255)),
+            ColorSequenceKeypoint.new(5/6,Color3.fromRGB(255,0,255)),
+            ColorSequenceKeypoint.new(1,Color3.fromRGB(255,0,0)),
+        })
+        grad.Parent=bar
+        local knob=Instance.new("Frame")
+        knob.AnchorPoint=Vector2.new(.5,.5)
+        knob.Position=UDim2.new(0,.5,0)
+        knob.Size=UDim2.fromOffset(4,22)
+        knob.BackgroundColor3=Color3.fromRGB(245,245,248)
+        knob.BorderSizePixel=0
+        knob.Parent=bar
+        local ks=Instance.new("UIStroke"); ks.Color=Color3.fromRGB(25,25,28); ks.Parent=knob
+        local dragging=false
+        local function sync()
+            local c=cfg.CarColor
+            if typeof(c)=="Color3" then knob.Position=UDim2.new(select(1,c:ToHSV()),0,.5,0) end
+        end
+        local function setFromX(x)
+            local h=math.clamp((x-bar.AbsolutePosition.X)/math.max(1,bar.AbsoluteSize.X),0,1)
+            cfg.CarColor=Color3.fromHSV(h,1,1)
+            knob.Position=UDim2.new(h,0,.5,0)
+        end
+        bar.InputBegan:Connect(function(input) if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; setFromX(input.Position.X) end end)
+        UIS.InputChanged:Connect(function(input) if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then setFromX(input.Position.X) end end)
+        UIS.InputEnded:Connect(function(input) if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+        task.defer(sync)
+    end
+
     local function seatedVehicle()
         local ch=LP.Character
         local hum=ch and ch:FindFirstChildOfClass("Humanoid")
@@ -53,14 +100,13 @@ return function(State, Registry, UI)
         if flat.Magnitude>0 then pcall(function() root.CFrame=CFrame.lookAt(root.Position,root.Position+flat.Unit) end) end
     end)
 
-    -- Remove the legacy Car ESP row from Visuals so vehicle options live in one panel.
     task.defer(function()
         local visualPage=UI.Pages.Visuals
         if not visualPage then return end
         for _,row in ipairs(visualPage:GetChildren()) do
             if row:IsA("Frame") then
-                local label=row:FindFirstChildWhichIsA("TextLabel")
-                if label and label.Text=="Car ESP" then row.Visible=false end
+                local label2=row:FindFirstChildWhichIsA("TextLabel")
+                if label2 and label2.Text=="Car ESP" then row.Visible=false end
             end
         end
     end)
