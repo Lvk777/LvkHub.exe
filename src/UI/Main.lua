@@ -1,6 +1,6 @@
 -- LvkHub.exe UI shell
 -- Yokai-style independent draggable category windows, compact dark rows,
--- blue/periwinkle accent, per-window collapse and RightShift visibility.
+-- blue/periwinkle accent, per-window collapse and configurable menu visibility key.
 
 local UIS=game:GetService("UserInputService")
 local CoreGui=game:GetService("CoreGui")
@@ -10,6 +10,9 @@ return function(State)
     local parent=(gethui and gethui()) or CoreGui
     local old=parent:FindFirstChild("LvkHubExe")
     if old then old:Destroy() end
+
+    State.Utility=State.Utility or {}
+    State.Utility.MenuKeyName=State.Utility.MenuKeyName or "RightShift"
 
     local gui=Instance.new("ScreenGui")
     gui.Name="LvkHubExe"
@@ -36,6 +39,7 @@ return function(State)
     local pages={}
     local windows={}
     local orderCounter=setmetatable({}, {__index=function() return 0 end})
+    local refreshers={}
 
     local function nextOrder(page)
         orderCounter[page]=orderCounter[page]+1
@@ -92,14 +96,8 @@ return function(State)
         win.BorderSizePixel=0
         win.ClipsDescendants=false
         win.Parent=main
-        local wc=Instance.new("UICorner")
-        wc.CornerRadius=UDim.new(0,5)
-        wc.Parent=win
-        local ws=Instance.new("UIStroke")
-        ws.Color=Color3.fromRGB(32,35,36)
-        ws.Thickness=1
-        ws.Transparency=.05
-        ws.Parent=win
+        local wc=Instance.new("UICorner"); wc.CornerRadius=UDim.new(0,5); wc.Parent=win
+        local ws=Instance.new("UIStroke"); ws.Color=Color3.fromRGB(32,35,36); ws.Thickness=1; ws.Transparency=.05; ws.Parent=win
 
         local header=Instance.new("Frame")
         header.Name="Header"
@@ -108,9 +106,7 @@ return function(State)
         header.BorderSizePixel=0
         header.Active=true
         header.Parent=win
-        local hc=Instance.new("UICorner")
-        hc.CornerRadius=UDim.new(0,5)
-        hc.Parent=header
+        local hc=Instance.new("UICorner"); hc.CornerRadius=UDim.new(0,5); hc.Parent=header
 
         local stripe=Instance.new("Frame")
         stripe.Name="Accent"
@@ -119,9 +115,7 @@ return function(State)
         stripe.BorderSizePixel=0
         stripe.BackgroundColor3=accent
         stripe.Parent=header
-        local sc=Instance.new("UICorner")
-        sc.CornerRadius=UDim.new(1,0)
-        sc.Parent=stripe
+        local sc=Instance.new("UICorner"); sc.CornerRadius=UDim.new(1,0); sc.Parent=stripe
 
         local title=Instance.new("TextLabel")
         title.BackgroundTransparency=1
@@ -164,10 +158,8 @@ return function(State)
         page.Parent=win
 
         local pad=Instance.new("UIPadding")
-        pad.PaddingTop=UDim.new(0,5)
-        pad.PaddingBottom=UDim.new(0,5)
-        pad.PaddingLeft=UDim.new(0,5)
-        pad.PaddingRight=UDim.new(0,5)
+        pad.PaddingTop=UDim.new(0,5); pad.PaddingBottom=UDim.new(0,5)
+        pad.PaddingLeft=UDim.new(0,5); pad.PaddingRight=UDim.new(0,5)
         pad.Parent=page
 
         local list=Instance.new("UIListLayout")
@@ -207,21 +199,44 @@ return function(State)
 
     for i,name in ipairs(categories) do makeWindow(name,i) end
 
-    UIS.InputBegan:Connect(function(input)
-        if input.KeyCode==Enum.KeyCode.RightShift then
-            main.Visible=not main.Visible
-            State.UI.Visible=main.Visible
-        end
-    end)
-
     local UI={
         Gui=gui,
         Main=main,
         Pages=pages,
         Windows=windows,
         Accent=accent,
-        Colors={Background=bg,Row=rowBg,Muted=muted,Text=text}
+        Colors={Background=bg,Row=rowBg,Muted=muted,Text=text},
+        Refreshers=refreshers,
     }
+
+    function UI.SetMenuVisible(v)
+        main.Visible=v==true
+        State.UI.Visible=main.Visible
+    end
+
+    function UI.ToggleMenu()
+        UI.SetMenuVisible(not main.Visible)
+    end
+
+    function UI.GetMenuKey()
+        local name=State.Utility and State.Utility.MenuKeyName or "RightShift"
+        local key=Enum.KeyCode[name]
+        return key or Enum.KeyCode.RightShift
+    end
+
+    function UI.RefreshAll()
+        for _,fn in ipairs(refreshers) do pcall(fn) end
+    end
+
+    UIS.InputBegan:Connect(function(input,processed)
+        if processed then
+            local focused=UIS:GetFocusedTextBox()
+            if focused then return end
+        end
+        if input.KeyCode~=Enum.KeyCode.Unknown and input.KeyCode==UI.GetMenuKey() then
+            UI.ToggleMenu()
+        end
+    end)
 
     function UI.Section(page,label)
         local l=Instance.new("TextLabel")
@@ -244,9 +259,7 @@ return function(State)
         f.BackgroundColor3=rowBg
         f.BorderSizePixel=0
         f.Parent=page
-        local c=Instance.new("UICorner")
-        c.CornerRadius=UDim.new(0,4)
-        c.Parent=f
+        local c=Instance.new("UICorner"); c.CornerRadius=UDim.new(0,4); c.Parent=f
 
         local t=Instance.new("TextLabel")
         t.BackgroundTransparency=1
@@ -274,9 +287,7 @@ return function(State)
         b.BorderSizePixel=0
         b.AutoButtonColor=false
         b.Parent=f
-        local bc=Instance.new("UICorner")
-        bc.CornerRadius=UDim.new(0,3)
-        bc.Parent=b
+        local bc=Instance.new("UICorner"); bc.CornerRadius=UDim.new(0,3); bc.Parent=b
 
         local mark=Instance.new("Frame")
         mark.AnchorPoint=Vector2.new(.5,.5)
@@ -284,24 +295,20 @@ return function(State)
         mark.Size=UDim2.fromOffset(18,10)
         mark.BorderSizePixel=0
         mark.Parent=b
-        local mc=Instance.new("UICorner")
-        mc.CornerRadius=UDim.new(0,2)
-        mc.Parent=mark
+        local mc=Instance.new("UICorner"); mc.CornerRadius=UDim.new(0,2); mc.Parent=mark
 
         local function paint()
             local on=get()==true
             b.BackgroundColor3=on and accent or Color3.fromRGB(45,45,45)
             mark.BackgroundColor3=on and Color3.fromRGB(235,235,235) or Color3.fromRGB(86,86,86)
         end
-        local function flip()
-            set(not get())
-            paint()
-        end
+        local function flip() set(not get()); paint() end
 
         b.MouseButton1Click:Connect(flip)
         t.InputBegan:Connect(function(input)
             if input.UserInputType==Enum.UserInputType.MouseButton1 then flip() end
         end)
+        table.insert(refreshers,paint)
         paint()
         return f
     end
@@ -383,6 +390,7 @@ return function(State)
         UIS.InputEnded:Connect(function(i)
             if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end
         end)
+        table.insert(refreshers,paint)
         paint()
         return f
     end
@@ -402,9 +410,7 @@ return function(State)
         b.TextColor3=Color3.fromRGB(210,210,210)
         b.Text=buttonText
         b.Parent=f
-        local c=Instance.new("UICorner")
-        c.CornerRadius=UDim.new(0,3)
-        c.Parent=b
+        local c=Instance.new("UICorner"); c.CornerRadius=UDim.new(0,3); c.Parent=b
         b.MouseButton1Click:Connect(function() task.spawn(callback,b) end)
         return b
     end
@@ -423,9 +429,7 @@ return function(State)
         b.TextSize=12
         b.TextColor3=Color3.fromRGB(200,200,200)
         b.Parent=f
-        local c=Instance.new("UICorner")
-        c.CornerRadius=UDim.new(0,3)
-        c.Parent=b
+        local c=Instance.new("UICorner"); c.CornerRadius=UDim.new(0,3); c.Parent=b
         local function paint() b.Text=tostring(get()) end
         b.MouseButton1Click:Connect(function()
             local current=get()
@@ -433,6 +437,7 @@ return function(State)
             set(values[i%#values+1])
             paint()
         end)
+        table.insert(refreshers,paint)
         paint()
         return b
     end
