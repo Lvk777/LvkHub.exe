@@ -33,6 +33,7 @@ local ok,err=pcall(function()
     -- One owner for every TestPlayers visual. Do not load the old Main/Chams/
     -- CarESP stacks together because they create duplicate overlays/highlights.
     loadModule("src/Visuals/UnifiedTestVisualsV3.lua")(State,Registry,UI)
+    loadModule("src/Visuals/PreviewCameraFix.lua")(UI)
 
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
