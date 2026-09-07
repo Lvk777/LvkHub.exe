@@ -88,7 +88,8 @@ return function(Registry, TargetPolicy)
     function Provider.IsRealPlayerCharacter(model)
         if not policyReady() then return true end
         local ok,result=pcall(TargetPolicy.IsRealPlayerCharacter,model)
-        return ok and result==true or true
+        if not ok then return true end
+        return result==true
     end
 
     function Provider.TargetAllowed(model)
