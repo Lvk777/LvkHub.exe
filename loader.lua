@@ -20,30 +20,12 @@ end
 local ok,err=pcall(function()
     local State=loadModule("src/Core/State.lua")
 
-    -- Restrictions are optional for UI loading, but targeting fails closed if the
-    -- policy file is unavailable. Missing policy never falls back to real Players.
-    local Restrictions=nil
-    local policyOK,policyResult=pcall(function()
-        return loadModule("src/Restrictions/Policy.lua")
-    end)
-    if policyOK and type(policyResult)=="table" and type(policyResult.Targets)=="table" then
-        Restrictions=policyResult
-    else
-        Restrictions={
-            Name="LvkHubRestrictionsFallback",
-            FailClosed=true,
-            Targets={
-                Mode="TEST_DUMMIES_ONLY",
-                IsAllowedTarget=function() return false end,
-                IsRealPlayerCharacter=function() return true end,
-                CanCloneSource=function() return false end,
-                Describe=function() return false,"restrictions unavailable: targeting disabled" end,
-            },
-            OtherPlayerCount=function() return math.huge end,
-            SoloWeaponModsAllowed=function() return false end,
-            VehicleBringAllowed=function() return false end,
-            RealPlayerInSeat=function() return true end,
-        }
+    -- Restrictions are an explicit required dependency. There is no synthetic
+    -- fail-closed fallback object anymore: if the policy is missing/invalid,
+    -- loading stops here instead of silently substituting another target mode.
+    local Restrictions=loadModule("src/Restrictions/Policy.lua")
+    if type(Restrictions)~="table" or type(Restrictions.Targets)~="table" then
+        error("LvkHub invalid restrictions policy")
     end
     shared.LvkHubRestrictions=Restrictions
     shared.LvkHubTargetRestrictions=Restrictions.Targets
