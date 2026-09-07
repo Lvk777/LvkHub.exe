@@ -20,7 +20,6 @@ end
 local ok,err=pcall(function()
     local State=loadModule("src/Core/State.lua")
 
-    -- Centralized fail-closed restrictions.
     local Restrictions=nil
     local policyOK,policyResult=pcall(function()
         return loadModule("src/Restrictions/Policy.lua")
@@ -68,7 +67,7 @@ local ok,err=pcall(function()
 
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
-    loadModule("src/Local/MainV2.lua")(State,Registry,UI)
+    loadModule("src/Local/MainV3.lua")(State,Registry,UI)
     loadModule("src/Local/ConfirmedHitSound.lua")(State)
     loadModule("src/Local/TrailGlow.lua")(State,Registry,UI)
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
