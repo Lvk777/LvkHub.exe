@@ -10,6 +10,7 @@ return function(State, Registry, UI)
     local page=UI.Pages.Combat
     State.Combat.SelectedBot=nil
     State.Combat.AimFOV=State.Combat.AimFOV or 180
+    State.Combat.AimbotSmoothness=tonumber(State.Combat.AimbotSmoothness) or .32
     if State.Combat.ShowAimFOV==nil then State.Combat.ShowAimFOV=true end
     if State.Combat.WallCheck==nil then State.Combat.WallCheck=true end
     if State.Combat.MagicThroughWalls==nil then State.Combat.MagicThroughWalls=false end
@@ -71,6 +72,59 @@ return function(State, Registry, UI)
 
     shared.LvkHubDummyAimAPI={ChooseTarget=chooseTarget,TargetPart=targetPart,Visible=visible}
 
+    ------------------------------------------------------------------------
+    -- Hitbox snapshots. Attributes make restoration survive target changes.
+    ------------------------------------------------------------------------
+    local originalSizes=setmetatable({}, {__mode="k"})
+    local function rememberPart(part)
+        if not part or not part:IsA("BasePart") then return end
+        if originalSizes[part]==nil then
+            originalSizes[part]={Size=part.Size,CanCollide=part.CanCollide,Transparency=part.Transparency}
+        end
+        if part:GetAttribute("LvkHubHitboxSaved")~=true then
+            part:SetAttribute("LvkHubHitboxSaved",true)
+            part:SetAttribute("LvkHubHitboxOriginalSize",part.Size)
+            part:SetAttribute("LvkHubHitboxOriginalCanCollide",part.CanCollide)
+            part:SetAttribute("LvkHubHitboxOriginalTransparency",part.Transparency)
+        end
+    end
+    local function restorePart(part)
+        if not part or not part.Parent then
+            originalSizes[part]=nil
+            return
+        end
+        local saved=originalSizes[part]
+        local attrSaved=part:GetAttribute("LvkHubHitboxSaved")==true
+        pcall(function()
+            if saved then
+                part.Size=saved.Size
+                part.CanCollide=saved.CanCollide
+                part.Transparency=saved.Transparency
+            elseif attrSaved then
+                local sz=part:GetAttribute("LvkHubHitboxOriginalSize")
+                local cc=part:GetAttribute("LvkHubHitboxOriginalCanCollide")
+                local tr=part:GetAttribute("LvkHubHitboxOriginalTransparency")
+                if typeof(sz)=="Vector3" then part.Size=sz end
+                if typeof(cc)=="boolean" then part.CanCollide=cc end
+                if typeof(tr)=="number" then part.Transparency=tr end
+            end
+            part:SetAttribute("LvkHubHitboxSaved",nil)
+            part:SetAttribute("LvkHubHitboxOriginalSize",nil)
+            part:SetAttribute("LvkHubHitboxOriginalCanCollide",nil)
+            part:SetAttribute("LvkHubHitboxOriginalTransparency",nil)
+        end)
+        originalSizes[part]=nil
+    end
+    local function restoreHitboxes()
+        for part in pairs(originalSizes) do restorePart(part) end
+        local folder=Workspace:FindFirstChild("TestPlayers")
+        if folder then
+            for _,obj in ipairs(folder:GetDescendants()) do
+                if obj:IsA("BasePart") and obj:GetAttribute("LvkHubHitboxSaved")==true then restorePart(obj) end
+            end
+        end
+    end
+
     UI.Section(page,"TEST PLAYERS / NPC DUMMIES")
     local _,sourceLabel=UI.Row(page,"Target source: Workspace.TestPlayers")
     sourceLabel.TextColor3=Color3.fromRGB(150,200,255)
@@ -88,10 +142,12 @@ return function(State, Registry, UI)
     UI.Toggle(page,"Show FOV",function() return State.Combat.ShowAimFOV end,function(v) State.Combat.ShowAimFOV=v end)
     UI.Number(page,"FOV Radius",function() return State.Combat.AimFOV end,function(v) State.Combat.AimFOV=math.clamp(tonumber(v) or 180,20,800) end,20,800)
     UI.Toggle(page,"Wall Check",function() return State.Combat.WallCheck end,function(v) State.Combat.WallCheck=v end)
-    UI.Toggle(page,"Magic Through Walls",function() return State.Combat.MagicThroughWalls end,function(v) State.Combat.MagicThroughWalls=v end)
 
     UI.Section(page,"Combat")
-    local function setGuarded(key,v) State.Combat[key]=(v and allowed()) or false end
+    local function setGuarded(key,v)
+        State.Combat[key]=(v and allowed()) or false
+        if key=="HitBoxes" and not State.Combat[key] then restoreHitboxes() end
+    end
     UI.Toggle(page,"Aimbot",function() return State.Combat.Aimbot end,function(v) setGuarded("Aimbot",v) end)
     UI.Toggle(page,"Silent Aim",function() return State.Combat.SilentAim end,function(v) setGuarded("SilentAim",v) end)
     UI.Toggle(page,"Magic Bullets",function() return State.Combat.MagicBullets end,function(v) setGuarded("MagicBullets",v) end)
@@ -100,6 +156,9 @@ return function(State, Registry, UI)
     UI.Dropdown(page,"Aim Part",{"Head","Torso"},function() return State.Combat.AimPart or "Head" end,function(v) State.Combat.AimPart=v end)
     UI.Toggle(page,"AntiAim",function() return State.Combat.AntiAim end,function(v) State.Combat.AntiAim=v end)
 
+    ------------------------------------------------------------------------
+    -- Animated FOV ring.
+    ------------------------------------------------------------------------
     local guiParent=(gethui and gethui()) or CoreGui
     local old=guiParent:FindFirstChild("LvkHubAimFOV")
     if old then old:Destroy() end
@@ -109,28 +168,28 @@ return function(State, Registry, UI)
     fovGui.ResetOnSpawn=false
     fovGui.DisplayOrder=995
     fovGui.Parent=guiParent
+
     local circle=Instance.new("Frame")
     circle.AnchorPoint=Vector2.new(.5,.5)
-    circle.BackgroundTransparency=1
+    circle.BackgroundColor3=Color3.fromRGB(119,120,255)
+    circle.BackgroundTransparency=.965
     circle.BorderSizePixel=0
     circle.Parent=fovGui
     local c=Instance.new("UICorner"); c.CornerRadius=UDim.new(1,0); c.Parent=circle
-    local st=Instance.new("UIStroke"); st.Thickness=1.25; st.Transparency=.08; st.Color=Color3.fromRGB(119,120,255); st.Parent=circle
-
-    local originalSizes=setmetatable({}, {__mode="k"})
-    local function restorePart(part)
-        local saved=originalSizes[part]
-        if not saved then return end
-        if part and part.Parent then pcall(function()
-            part.Size=saved.Size
-            part.CanCollide=saved.CanCollide
-            part.Transparency=saved.Transparency
-        end) end
-        originalSizes[part]=nil
-    end
-    local function restoreHitboxes()
-        for part in pairs(originalSizes) do restorePart(part) end
-    end
+    local st=Instance.new("UIStroke"); st.Thickness=1.35; st.Transparency=.06; st.Color=Color3.fromRGB(119,120,255); st.Parent=circle
+    local grad=Instance.new("UIGradient")
+    grad.Color=ColorSequence.new({
+        ColorSequenceKeypoint.new(0,Color3.fromRGB(80,130,255)),
+        ColorSequenceKeypoint.new(.33,Color3.fromRGB(145,90,255)),
+        ColorSequenceKeypoint.new(.66,Color3.fromRGB(65,220,255)),
+        ColorSequenceKeypoint.new(1,Color3.fromRGB(80,130,255)),
+    })
+    grad.Transparency=NumberSequence.new({
+        NumberSequenceKeypoint.new(0,.10),
+        NumberSequenceKeypoint.new(.5,.75),
+        NumberSequenceKeypoint.new(1,.10),
+    })
+    grad.Parent=circle
 
     local antiOriginal=setmetatable({}, {__mode="k"})
     local antiPhase=0
@@ -139,6 +198,7 @@ return function(State, Registry, UI)
         for m,tr in pairs(antiOriginal) do if m and m.Parent then pcall(function() m.Transform=tr end) end; antiOriginal[m]=nil end
     end
 
+    local fovAnim=0
     RunService:BindToRenderStep("LvkHubBotAimbotV4",Enum.RenderPriority.Last.Value+500,function(dt)
         local cam=Workspace.CurrentCamera
         if cam then
@@ -147,6 +207,11 @@ return function(State, Registry, UI)
             circle.Position=UDim2.fromOffset(center.X,center.Y)
             circle.Size=UDim2.fromOffset(r*2,r*2)
             circle.Visible=State.Combat.ShowAimFOV==true
+            fovAnim=(fovAnim+dt*42)%360
+            grad.Rotation=fovAnim
+            local hue=(fovAnim/360+.58)%1
+            st.Color=Color3.fromHSV(hue,.48,1)
+            st.Transparency=.05+.05*(.5+.5*math.sin(os.clock()*2.1))
         else circle.Visible=false end
 
         local current=chooseTarget(false)
@@ -155,7 +220,10 @@ return function(State, Registry, UI)
 
         if allowed() and State.Combat.Aimbot and cam then
             local _,p=chooseTarget(State.Combat.WallCheck==true)
-            if p then cam.CFrame=cam.CFrame:Lerp(CFrame.lookAt(cam.CFrame.Position,p.Position),.32) end
+            if p then
+                local smooth=math.clamp(tonumber(State.Combat.AimbotSmoothness) or .32,.05,1)
+                cam.CFrame=cam.CFrame:Lerp(CFrame.lookAt(cam.CFrame.Position,p.Position),smooth)
+            end
         end
 
         if State.Combat.AntiAim then
@@ -193,7 +261,7 @@ return function(State, Registry, UI)
                     local px=p and fovDistance(p)
                     if p and px and px<=radius then
                         eligible[p]=true
-                        if originalSizes[p]==nil then originalSizes[p]={Size=p.Size,CanCollide=p.CanCollide,Transparency=p.Transparency} end
+                        rememberPart(p)
                         local n=math.max(2,State.Combat.HitboxSize or 6)
                         p.Size=Vector3.new(n,n,n)
                         p.CanCollide=false
