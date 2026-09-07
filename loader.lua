@@ -33,6 +33,7 @@ local ok,err=pcall(function()
 
     -- Single TestPlayers renderer. V4 owns ESP/Chams/boxes/tracers/preview/CarESP.
     loadModule("src/Visuals/UnifiedTestVisualsV4.lua")(State,Registry,UI)
+    loadModule("src/Visuals/PreviewV4CameraFix.lua")(UI)
 
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
