@@ -1,7 +1,19 @@
 -- Reliable local TestPlayers hit sound. No real-player targeting or damage.
+-- This is the single HitSound playback owner for the current loader.
 return function(State, Registry, UI)
     local RunService=game:GetService("RunService")
     local Workspace=game:GetService("Workspace")
+
+    local function removeLegacySounds(parent)
+        if not parent then return end
+        for _,name in ipairs({"LvkHubHitSoundV2","LvkHubHitSoundV3","LvkHubHitSoundV4","LvkHubDummyHitSoundV2"}) do
+            local old=parent:FindFirstChild(name)
+            if old then pcall(function() old:Destroy() end) end
+        end
+    end
+
+    removeLegacySounds(Workspace.CurrentCamera)
+    removeLegacySounds(Workspace)
 
     local sound=Instance.new("Sound")
     sound.Name="LvkHubDummyHitSoundV2"
@@ -10,14 +22,19 @@ return function(State, Registry, UI)
     sound.Parent=Workspace.CurrentCamera or Workspace
 
     Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-        if Workspace.CurrentCamera then sound.Parent=Workspace.CurrentCamera end
+        if Workspace.CurrentCamera then
+            removeLegacySounds(Workspace.CurrentCamera)
+            sound.Parent=Workspace.CurrentCamera
+        end
     end)
 
     local lastPlay=0
     local function play()
         if not State.Local.HitSound then return end
         local now=os.clock()
-        if now-lastPlay<.045 then return end
+        -- Adapter feedback + health fallback can observe the same practice hit.
+        -- One debounce prevents the same hit from sounding twice.
+        if now-lastPlay<.09 then return end
         lastPlay=now
         if Workspace.CurrentCamera and sound.Parent~=Workspace.CurrentCamera then sound.Parent=Workspace.CurrentCamera end
         pcall(function()
@@ -26,12 +43,14 @@ return function(State, Registry, UI)
         end)
     end
 
-    -- WeaponSystemDummyAdapter calls this function when it applies a local dummy hit.
     shared.LvkHubPlayHitSound=play
 
-    -- Fallback: if any local practice dummy's Humanoid health drops, play once.
     local health=setmetatable({}, {__mode="k"})
-    RunService.Heartbeat:Connect(function()
+    local timer=0
+    RunService.Heartbeat:Connect(function(dt)
+        timer+=dt
+        if timer<.04 then return end
+        timer=0
         if not State.Local.HitSound then return end
         for model in pairs(Registry.Bots) do
             if Registry.IsBot(model) then
