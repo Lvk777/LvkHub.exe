@@ -1,5 +1,5 @@
--- Shared ••• popup placement: open once below Movement, then remain draggable.
--- This module only wraps UI.OpenDockedPanel; it never rewrites panel position per-frame.
+-- Shared ••• popup placement: always opens below Movement and remains draggable.
+-- No per-frame rewrites; after opening the user can move the popup freely.
 return function(State, UI)
     local Workspace=game:GetService("Workspace")
     local oldOpen=UI.OpenDockedPanel
@@ -16,17 +16,17 @@ return function(State, UI)
         if not movement then return end
         local v=viewport()
         local w=math.max(panel.AbsoluteSize.X,214)
-        local h=math.max(panel.AbsoluteSize.Y,44)
         local x=math.clamp(movement.AbsolutePosition.X,4,math.max(4,v.X-w-4))
-        local y=movement.AbsolutePosition.Y+movement.AbsoluteSize.Y+10
-        if y+h>v.Y-4 then y=math.max(4,v.Y-h-4) end
+        -- Important: never bounce the popup above Movement just to keep its full height onscreen.
+        -- It opens below Movement exactly once; from there it is freely draggable.
+        local y=movement.AbsolutePosition.Y+movement.AbsoluteSize.Y+12
         panel.Position=UDim2.fromOffset(x,y)
     end
 
     UI.OpenDockedPanel=function(panel)
         oldOpen(panel)
-        -- The popup often receives its final AutomaticSize one frame later.
         task.defer(place,panel)
         task.delay(.05,place,panel)
+        task.delay(.14,place,panel)
     end
 end
