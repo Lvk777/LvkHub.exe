@@ -207,7 +207,7 @@ return function(State, Registry, UI)
     task.defer(function() for _,feature in ipairs(features) do addDots(feature) end end)
     task.delay(.5,function() for _,feature in ipairs(features) do addDots(feature) end end)
 
-    UIS.InputBegan:Connect(function(input,processed)
+    UIS.InputBegan:Connect(function(input,_processed)
         if input.UserInputType~=Enum.UserInputType.Keyboard then return end
 
         if listening then
@@ -227,7 +227,10 @@ return function(State, Registry, UI)
             return
         end
 
-        if processed then return end
+        -- Game systems may mark Q/E/Shift/etc. as processed. Feature keybinds are
+        -- still allowed unless the user is actively typing into a TextBox.
+        if UIS:GetFocusedTextBox() then return end
+
         for _,feature in ipairs(features) do
             local key=K[feature.id]
             if key and input.KeyCode==key then
