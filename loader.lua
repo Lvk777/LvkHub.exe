@@ -22,6 +22,8 @@ end
 local ok,err=pcall(function()
     local State=loadModule("src/Core/State.lua")
     local Registry=loadModule("src/Core/Registry.lua")
+    loadModule("src/Core/RegistryBootstrap.lua")(Registry)
+
     local MakeUI=loadModule("src/UI/Main.lua")
     local UI=MakeUI(State)
 
