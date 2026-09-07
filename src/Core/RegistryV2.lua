@@ -1,16 +1,19 @@
 -- LvkHub.exe Registry V2
--- Local practice dummies only. Real Player.Character models are never inserted into Bots.
+-- Local practice dummies only. Target eligibility is delegated to
+-- src/Core/TargetRestrictions.lua and fails closed if that policy is absent.
 -- Inventory Viewer reads only a snapshot stored inside each local dummy clone.
 
 local Players=game:GetService("Players")
 local Workspace=game:GetService("Workspace")
 local LocalPlayer=Players.LocalPlayer
+local Policy=shared.LvkHubTargetRestrictions
 
 local Registry={
     Bots=setmetatable({}, {__mode="k"}),
     Vehicles=setmetatable({}, {__mode="k"}),
     VehicleFolder=nil,
     TestPlayersFolder=nil,
+    TargetPolicy=Policy,
     _connections={},
 }
 
@@ -21,25 +24,39 @@ local function disconnectAll()
     table.clear(Registry._connections)
 end
 
-function Registry.PracticeAllowed()
-    return true
+local function policyReady()
+    return type(Policy)=="table"
+        and Policy.Mode=="TEST_DUMMIES_ONLY"
+        and type(Policy.IsAllowedTarget)=="function"
+        and type(Policy.IsRealPlayerCharacter)=="function"
 end
 
-local function realPlayerOwned(model)
-    if not model or not model:IsA("Model") then return false end
-    local ok,p=pcall(function() return Players:GetPlayerFromCharacter(model) end)
-    if ok and p then return true end
-    for _,plr in ipairs(Players:GetPlayers()) do
-        local ch=plr.Character
-        if ch and (model==ch or model:IsDescendantOf(ch) or ch:IsDescendantOf(model)) then
-            return true
-        end
-    end
-    return false
+function Registry.PracticeAllowed()
+    return policyReady()
 end
 
 function Registry.IsRealPlayerCharacter(model)
-    return realPlayerOwned(model)
+    if not policyReady() then
+        -- FAIL CLOSED: without policy, treat every candidate as unsafe.
+        return true
+    end
+    local ok,result=pcall(Policy.IsRealPlayerCharacter,model)
+    return ok and result==true or true
+end
+
+function Registry.TargetAllowed(model)
+    if not policyReady() then return false end
+    local ok,result=pcall(Policy.IsAllowedTarget,model)
+    return ok and result==true or false
+end
+
+function Registry.TargetPolicyStatus(model)
+    if not policyReady() then return false,"target policy missing: fail closed" end
+    if type(Policy.Describe)=="function" then
+        local ok,a,b=pcall(Policy.Describe,model)
+        if ok then return a,b end
+    end
+    return Registry.TargetAllowed(model),Registry.TargetAllowed(model) and "allowed" or "blocked"
 end
 
 function Registry.RootOf(model)
@@ -131,6 +148,11 @@ local function placement(index)
 end
 
 local function cloneRig(source,index)
+    if policyReady() and type(Policy.CanCloneSource)=="function" then
+        local ok,can=pcall(Policy.CanCloneSource,source)
+        if not ok or not can then return nil end
+    end
+
     local old=source.Archivable
     source.Archivable=true
     local ok,clone=pcall(function() return source:Clone() end)
@@ -190,9 +212,11 @@ end
 
 local function rebuildBots()
     table.clear(Registry.Bots)
+    if not policyReady() then return end
+
     local folder=ensureTestFolder()
     for _,m in ipairs(folder:GetChildren()) do
-        if m:IsA("Model") and m:GetAttribute("LvkHubManagedDummy")==true and validRig(m) and not realPlayerOwned(m) then
+        if validRig(m) and Registry.TargetAllowed(m) then
             local hum=Registry.HumanoidOf(m)
             if hum and hum.Health>0 then Registry.Bots[m]=true end
         end
@@ -208,7 +232,7 @@ function Registry.IsBot(model)
     return model~=nil
         and Registry.Bots[model]==true
         and model:IsDescendantOf(Workspace)
-        and not realPlayerOwned(model)
+        and Registry.TargetAllowed(model)
 end
 
 function Registry.CountBots()
