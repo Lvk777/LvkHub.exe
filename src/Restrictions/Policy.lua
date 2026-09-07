@@ -64,4 +64,16 @@ function Policy.VehicleBringAllowed()
     return Policy.OtherPlayerCount()==0
 end
 
+function Policy.RealPlayerInSeat(seat)
+    if not seat then return nil end
+    local ok,occupant=pcall(function() return seat.Occupant end)
+    if not ok or not occupant then return nil end
+    local character=occupant.Parent
+    if not character then return nil end
+    local okPlayer,player=pcall(function() return Players:GetPlayerFromCharacter(character) end)
+    if okPlayer and player then return player end
+    for _,p in ipairs(Players:GetPlayers()) do if p.Character==character then return p end end
+    return nil
+end
+
 return Policy
