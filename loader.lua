@@ -27,9 +27,14 @@ local ok,err=pcall(function()
 
     loadModule("src/Combat/Main.lua")(State,Registry,UI)
     loadModule("src/Movement/Main.lua")(State,Registry,UI)
+
+    -- Prime one dedicated Highlight per local TestPlayer before the legacy
+    -- Visuals renderer creates its own internal objects. This keeps Chams stable
+    -- with many test dummies and avoids the duplicate fallback renderer.
+    loadModule("src/Visuals/TestPlayersChams.lua")(State,Registry,UI)
     loadModule("src/Visuals/Main.lua")(State,Registry,UI)
-    loadModule("src/Visuals/TestPlayersFallback.lua")(State,Registry,UI)
     loadModule("src/Visuals/CarESPExact.lua")(State)
+
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
     loadModule("src/Local/Main.lua")(State,Registry,UI)
