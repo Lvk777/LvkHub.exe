@@ -1,12 +1,11 @@
 -- LvkHub.exe centralized restrictions policy.
--- FAIL-CLOSED: if this folder/module is absent, loader supplies a deny-all fallback.
+-- This module is required by the loader and keeps target/session policy in one place.
 local Players=game:GetService("Players")
 local Workspace=game:GetService("Workspace")
 local LP=Players.LocalPlayer
 
 local Policy={
     Name="LvkHubRestrictions",
-    FailClosed=true,
 }
 
 local Targets={
@@ -52,7 +51,9 @@ Policy.Targets=Targets
 
 function Policy.OtherPlayerCount()
     local n=0
-    for _,p in ipairs(Players:GetPlayers()) do if p~=LP then n+=1 end end
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=LP then n+=1 end
+    end
     return n
 end
 
@@ -72,7 +73,9 @@ function Policy.RealPlayerInSeat(seat)
     if not character then return nil end
     local okPlayer,player=pcall(function() return Players:GetPlayerFromCharacter(character) end)
     if okPlayer and player then return player end
-    for _,p in ipairs(Players:GetPlayers()) do if p.Character==character then return p end end
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p.Character==character then return p end
+    end
     return nil
 end
 
