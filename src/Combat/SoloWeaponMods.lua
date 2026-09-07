@@ -37,7 +37,7 @@ return function(State, Registry, UI)
     UI.Toggle(page,"No Recoil [SOLO]",function() return State.Combat.NoRecoil end,function(v) State.Combat.NoRecoil=v end)
     UI.Toggle(page,"Infinite Ammo [SOLO]",function() return State.Combat.InfiniteAmmo end,function(v) State.Combat.InfiniteAmmo=v end)
     UI.Toggle(page,"Fast Reload [SOLO]",function() return State.Combat.FastReload end,function(v) State.Combat.FastReload=v end)
-    UI.Number(page,"Reload Multiplier",function() return State.Combat.FastReloadMultiplier end,function(v)
+    UI.Number(page,"Reload Mult.",function() return State.Combat.FastReloadMultiplier end,function(v)
         State.Combat.FastReloadMultiplier=math.clamp(tonumber(v) or 4,1,10)
     end,1,10)
 
