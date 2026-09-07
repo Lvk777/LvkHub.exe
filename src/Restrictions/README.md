@@ -14,6 +14,6 @@ All active targeting/session restrictions are centralized in `Policy.lua`.
 - `Policy.VehicleBringAllowed()` applies the same solo-session gate to BringCar.
 - `Policy.RealPlayerInSeat(seat)` prevents moving a vehicle whose driver seat belongs to a real Player.
 
-## Failure mode
+## Loader behavior
 
-The loader uses a deny-all fallback when `Policy.lua` is absent or fails to load. Removing the restrictions folder therefore leaves the UI running but registers no combat/visual targets and blocks solo-gated mutations.
+`Policy.lua` is a required module. The loader no longer creates a `DENY_ALL`/`FailClosed` fallback table. If the required policy cannot be loaded, initialization stops instead of silently selecting a different target source.
