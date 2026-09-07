@@ -26,6 +26,8 @@ local ok,err=pcall(function()
     end)
     if policyOK and type(policyResult)=="table" then Restrictions=policyResult end
     if not Restrictions then
+        -- Fail closed by design: deleting Restrictions never converts the hub into
+        -- real-player targeting or bypasses solo guards.
         Restrictions={
             Name="LvkHubRestrictionsFallback",
             FailClosed=true,
@@ -52,7 +54,6 @@ local ok,err=pcall(function()
     local MakeUI=loadModule("src/UI/Main.lua")
     local UI=MakeUI(State)
     loadModule("src/UI/Enhancements.lua")(State,UI)
-    loadModule("src/UI/DockBelowMovement.lua")(State,UI)
 
     loadModule("src/Combat/MainV4.lua")(State,Registry,UI)
     loadModule("src/Combat/WeaponSystemDummyAdapterV3.lua")(State,Registry,UI)
@@ -61,8 +62,7 @@ local ok,err=pcall(function()
     loadModule("src/Movement/MainV2.lua")(State,Registry,UI)
 
     loadModule("src/Visuals/UnifiedTestVisualsV5.lua")(State,Registry,UI)
-    loadModule("src/Visuals/DummyPreviewV6.lua")(State,Registry,UI)
-    loadModule("src/Visuals/PreviewAvatarFixV8.lua")(State,Registry,UI)
+    loadModule("src/Visuals/PreviewV10.lua")(State,Registry,UI)
     loadModule("src/Visuals/PracticeOverlayV2.lua")(State,Registry,UI)
 
     loadModule("src/Vehicle/Main.lua")(State,Registry,UI)
@@ -70,9 +70,11 @@ local ok,err=pcall(function()
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
     loadModule("src/Utility/SoloSurvival.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
+
     loadModule("src/Local/MainV3.lua")(State,Registry,UI)
     loadModule("src/Local/MuteGunshotsV3.lua")(State,Registry,UI)
-    loadModule("src/Local/BulletTracerV4.lua")(State,Registry,UI)
+    loadModule("src/Local/GunshotReplacementV1.lua")(State,Registry,UI)
+    loadModule("src/Local/BulletTracerV5.lua")(State,Registry,UI)
     loadModule("src/UI/LocalOrderPolish.lua")(State,UI)
     loadModule("src/Local/DummyHitSoundV2.lua")(State,Registry,UI)
     loadModule("src/Local/TrailGlow.lua")(State,Registry,UI)
@@ -82,12 +84,16 @@ local ok,err=pcall(function()
     loadModule("src/UI/DummyTargetInfo.lua")(State,Registry,UI)
     loadModule("src/UI/CompactLabels.lua")(State,UI)
     loadModule("src/UI/LocalPopupPolishV4.lua")(State,UI)
-    loadModule("src/UI/LayoutPolishV3.lua")(State,UI)
     loadModule("src/UI/FOVBorderPolish.lua")(State,UI)
 
     loadModule("src/Core/YokaiPolish.lua")(UI)
     loadModule("src/Core/YokaiBlueTheme.lua")(UI)
-    loadModule("src/UI/WatermarkV2.lua")(State,UI)
+
+    -- Final layout/docking is loaded after every frame/popup owner exists.
+    loadModule("src/UI/LayoutFinalV4.lua")(State,UI)
+    loadModule("src/UI/DockBelowMovementV2.lua")(State,UI)
+    loadModule("src/UI/DragPolishV1.lua")(State,UI)
+    loadModule("src/UI/WatermarkV3.lua")(State,UI)
 
     shared.LvkHubExe={
         State=State,
