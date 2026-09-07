@@ -3,7 +3,6 @@ return function(State, Registry, UI)
     local Players=game:GetService("Players")
     local RunService=game:GetService("RunService")
     local UIS=game:GetService("UserInputService")
-    local LP=Players.LocalPlayer
 
     State.Visuals.TargetInfo=State.Visuals.TargetInfo==true
     UI.Toggle(UI.Pages.Visuals,"Target Info",function() return State.Visuals.TargetInfo end,function(v) State.Visuals.TargetInfo=v end)
@@ -137,9 +136,9 @@ return function(State, Registry, UI)
     end
 
     dots.MouseButton1Click:Connect(function()
-        if not current then return end
-        local api=shared.LvkHubDummyInventoryAPI
-        if api and type(api.OpenFor)=="function" then api.OpenFor(current) end
+        if not current or not Registry.IsBot(current) then return end
+        State.Combat.SelectedBot=current
+        State.Combat.DummyInventoryVisible=true
     end)
 
     local timer=0
