@@ -1,1 +1,7 @@
+-- NORMAL entry point: main branch only.
+if shared.LvkHubRuntimeOwner and shared.LvkHubRuntimeOwner~="main" then
+    warn("[LvkHub] another isolated runtime already owns this session: "..tostring(shared.LvkHubRuntimeOwner))
+    return
+end
+shared.LvkHubRuntimeOwner="main"
 loadstring(game:HttpGet("https://raw.githubusercontent.com/Lvk777/LvkHub.exe/main/loader.lua",true))()
