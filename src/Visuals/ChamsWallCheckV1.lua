@@ -1,5 +1,7 @@
--- Chams wall-check/color patch for managed TestPlayers only.
--- Keeps the existing unified renderer, but makes Chams visible/hidden aware.
+-- Chams wall-check/color owner for managed TestPlayers only.
+-- IMPORTANT: this module is the ONLY final color owner for LvkHubUnifiedV5Chams.
+-- Visibility is sampled at a fixed cadence and debounced to avoid red/green flicker
+-- when a dummy is close to a wall/door edge.
 return function(State, Registry, UI)
     local Players=game:GetService("Players")
     local RunService=game:GetService("RunService")
@@ -9,7 +11,7 @@ return function(State, Registry, UI)
 
     local cfg=State.Visuals._V5Config or {}
     cfg.ChamsWallCheck = cfg.ChamsWallCheck ~= false
-    cfg.ChamsColor = cfg.ChamsColor or Color3.fromRGB(55,235,95) -- visible
+    cfg.ChamsColor = cfg.ChamsColor or Color3.fromRGB(55,235,95)
     cfg.ChamsHiddenColor = cfg.ChamsHiddenColor or Color3.fromRGB(245,65,65)
     State.Visuals._V5Config=cfg
 
@@ -29,18 +31,24 @@ return function(State, Registry, UI)
         c.Parent=o
     end
 
+    ----------------------------------------------------------------------
+    -- Stable character-origin wall check.
+    ----------------------------------------------------------------------
     local function originPart()
         local ch=LP.Character
         return ch and (ch:FindFirstChild("Head") or ch:FindFirstChild("HumanoidRootPart") or ch:FindFirstChildWhichIsA("BasePart")) or nil
     end
 
-    local function visibleFromCharacter(model)
+    local function rawVisibleFromCharacter(model)
         if not model or not Registry.IsBot(model) then return false end
         local origin=originPart()
-        local target=model:FindFirstChild("Head") or Registry.RootOf(model)
-        if not origin or not target then return false end
-        local dir=target.Position-origin.Position
-        if dir.Magnitude<.05 then return true end
+        if not origin then return false end
+
+        local samples={
+            model:FindFirstChild("Head"),
+            model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso"),
+            model:FindFirstChild("HumanoidRootPart"),
+        }
 
         local rp=RaycastParams.new()
         rp.FilterType=Enum.RaycastFilterType.Exclude
@@ -50,21 +58,71 @@ return function(State, Registry, UI)
         if cam then table.insert(ex,cam) end
         rp.FilterDescendantsInstances=ex
         rp.IgnoreWater=true
-        return Workspace:Raycast(origin.Position,dir,rp)==nil
+
+        -- If any representative body point is genuinely exposed from the
+        -- character, consider the dummy visible. This is much more stable than
+        -- testing only the head every render frame.
+        for _,target in ipairs(samples) do
+            if target and target:IsA("BasePart") then
+                local dir=target.Position-origin.Position
+                if dir.Magnitude<.05 or Workspace:Raycast(origin.Position,dir,rp)==nil then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
+    local visibility=setmetatable({}, {__mode="k"})
+    local SAMPLE_INTERVAL=.10
+    local REQUIRED_MATCHES=2
+
+    local function sampleVisibility(model)
+        local raw=rawVisibleFromCharacter(model)
+        local s=visibility[model]
+        if not s then
+            s={stable=raw,candidate=raw,count=0}
+            visibility[model]=s
+            return raw
+        end
+
+        if raw==s.stable then
+            s.candidate=raw
+            s.count=0
+        elseif raw==s.candidate then
+            s.count+=1
+            if s.count>=REQUIRED_MATCHES then
+                s.stable=raw
+                s.count=0
+            end
+        else
+            s.candidate=raw
+            s.count=1
+        end
+        return s.stable
+    end
+
+    local function stableVisible(model)
+        local s=visibility[model]
+        if s then return s.stable end
+        return sampleVisibility(model)
+    end
+
+    local function combatFocus(model)
+        return State.Combat
+            and State.Combat.SelectedBot==model
+            and (State.Combat.Aimbot or State.Combat.SilentAim or State.Combat.MagicBullets or State.Combat.HitBoxes)
     end
 
     local function chamsColor(model)
-        -- A selected snapline/aim target wins with Yokai blue.
-        if State.Visuals.Snapline==true and State.Combat and State.Combat.SelectedBot==model then
-            return UI.Accent
-        end
+        if combatFocus(model) then return UI.Accent end
         if cfg.ChamsWallCheck then
-            return visibleFromCharacter(model) and cfg.ChamsColor or cfg.ChamsHiddenColor
+            return stableVisible(model) and cfg.ChamsColor or cfg.ChamsHiddenColor
         end
         return cfg.ChamsColor
     end
 
-    shared.LvkHubDummyChamsVisibleFromCharacter=visibleFromCharacter
+    shared.LvkHubDummyChamsVisibleFromCharacter=stableVisible
     shared.LvkHubDummyChamsColor=chamsColor
 
     ----------------------------------------------------------------------
@@ -180,33 +238,48 @@ return function(State, Registry, UI)
                 if l and l.Text=="Color" then l.Text="Visible" end
             end
         end
-        nextY=addToggle(panel,nextY,"Wall Check",function() return cfg.ChamsWallCheck end,function(v) cfg.ChamsWallCheck=v end)
+        nextY=addToggle(panel,nextY,"Wall Check",function() return cfg.ChamsWallCheck end,function(v)
+            cfg.ChamsWallCheck=v
+            table.clear(visibility)
+        end)
         nextY=addColor(panel,nextY,"Hidden",function() return cfg.ChamsHiddenColor end,function(v) cfg.ChamsHiddenColor=v end)
         panel.Size=UDim2.fromOffset(panel.Size.X.Offset,math.max(panel.Size.Y.Offset,nextY+3))
     end
 
     ----------------------------------------------------------------------
-    -- Final color pass. Loaded after the unified renderer so it wins colors.
+    -- Single final Chams owner.
     ----------------------------------------------------------------------
-    local timer=0
+    local sampleTimer=0
+    local popupTimer=0
     RunService.RenderStepped:Connect(function(dt)
-        timer+=dt
-        if timer>=.08 then
-            timer=0
+        sampleTimer+=dt
+        popupTimer+=dt
+
+        if popupTimer>=.10 then
+            popupTimer=0
             patchPopup(UI.ActiveDockedPanel)
         end
 
+        if sampleTimer>=SAMPLE_INTERVAL then
+            sampleTimer=0
+            for model in pairs(Registry.Bots) do
+                if Registry.IsBot(model) then sampleVisibility(model) else visibility[model]=nil end
+            end
+        end
+
+        -- UnifiedTestVisualsV5 owns creation/enabling. This module only owns the
+        -- FINAL Chams color when Chams itself is enabled. It intentionally does
+        -- not scan/modify preview, self, gun, car, or old Highlight instances.
         if State.Visuals.Chams~=true then return end
         for model in pairs(Registry.Bots) do
             if Registry.IsBot(model) then
-                local color=chamsColor(model)
-                for _,d in ipairs(model:GetDescendants()) do
-                    if d:IsA("Highlight") and string.find(string.lower(d.Name),"chams",1,true) then
-                        d.Enabled=true
-                        d.FillColor=color
-                        d.OutlineColor=color
-                        d.FillTransparency=math.clamp((cfg.ChamsTransparency or 62)/100,0,1)
-                    end
+                local h=model:FindFirstChild("LvkHubUnifiedV5Chams")
+                if h and h:IsA("Highlight") then
+                    local color=chamsColor(model)
+                    h.Enabled=true
+                    h.FillColor=color
+                    h.OutlineColor=color
+                    h.FillTransparency=math.clamp((cfg.ChamsTransparency or 62)/100,0,1)
                 end
             end
         end
