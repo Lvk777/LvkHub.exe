@@ -1,4 +1,4 @@
--- Feature keybinds live inside per-feature ••• menus instead of permanent rows.
+-- Feature keybinds and per-feature settings live inside ••• menus.
 return function(State, Registry, UI)
     local UIS=game:GetService("UserInputService")
 
@@ -77,7 +77,7 @@ return function(State, Registry, UI)
 
         local panel=Instance.new("Frame")
         panel.Name="LvkFeatureOptions"
-        panel.Size=UDim2.fromOffset(220,108)
+        panel.Size=UDim2.fromOffset(236,44)
         panel.BackgroundColor3=Color3.fromRGB(17,18,22)
         panel.BorderSizePixel=0
         panel.ZIndex=100
@@ -113,27 +113,34 @@ return function(State, Registry, UI)
         close.Parent=panel
         rounded(close,4)
 
-        local row=Instance.new("Frame")
-        row.Position=UDim2.fromOffset(7,39)
-        row.Size=UDim2.new(1,-14,0,31)
-        row.BackgroundColor3=Color3.fromRGB(27,28,34)
-        row.BorderSizePixel=0
-        row.ZIndex=101
-        row.Parent=panel
-        rounded(row,4)
+        local y=39
+        local function addBaseRow(label,height)
+            local h=height or 31
+            local row=Instance.new("Frame")
+            row.Position=UDim2.fromOffset(7,y)
+            row.Size=UDim2.new(1,-14,0,h)
+            row.BackgroundColor3=Color3.fromRGB(27,28,34)
+            row.BorderSizePixel=0
+            row.ZIndex=101
+            row.Parent=panel
+            rounded(row,4)
+            local l=Instance.new("TextLabel")
+            l.BackgroundTransparency=1
+            l.Position=UDim2.fromOffset(8,0)
+            l.Size=UDim2.new(1,-16,1,0)
+            l.Font=Enum.Font.SourceSans
+            l.TextSize=12
+            l.TextColor3=Color3.fromRGB(220,220,228)
+            l.TextXAlignment=Enum.TextXAlignment.Left
+            l.Text=label
+            l.ZIndex=102
+            l.Parent=row
+            y+=h+5
+            return row,l
+        end
 
-        local label=Instance.new("TextLabel")
-        label.BackgroundTransparency=1
-        label.Position=UDim2.fromOffset(8,0)
-        label.Size=UDim2.new(1,-92,1,0)
-        label.Font=Enum.Font.SourceSans
-        label.TextSize=12
-        label.TextColor3=Color3.fromRGB(220,220,228)
-        label.TextXAlignment=Enum.TextXAlignment.Left
-        label.Text="Keybind"
-        label.ZIndex=102
-        label.Parent=row
-
+        local keyRow,keyLabel=addBaseRow("Keybind")
+        keyLabel.Size=UDim2.new(1,-92,1,0)
         local b=Instance.new("TextButton")
         b.AnchorPoint=Vector2.new(1,.5)
         b.Position=UDim2.new(1,-7,.5,0)
@@ -144,11 +151,147 @@ return function(State, Registry, UI)
         b.TextSize=10
         b.TextColor3=Color3.fromRGB(220,220,228)
         b.ZIndex=103
-        b.Parent=row
+        b.Parent=keyRow
         rounded(b,3)
 
+        local function addSlider(label,get,set,min,max)
+            local row,l=addBaseRow(label,38)
+            l.Size=UDim2.fromOffset(82,38)
+            local bar=Instance.new("Frame")
+            bar.Position=UDim2.fromOffset(88,16)
+            bar.Size=UDim2.new(1,-143,0,6)
+            bar.BackgroundColor3=Color3.fromRGB(43,44,51)
+            bar.BorderSizePixel=0
+            bar.Active=true
+            bar.ZIndex=103
+            bar.Parent=row
+            rounded(bar,3)
+            local fill=Instance.new("Frame")
+            fill.Size=UDim2.fromScale(0,1)
+            fill.BackgroundColor3=UI.Accent
+            fill.BorderSizePixel=0
+            fill.ZIndex=104
+            fill.Parent=bar
+            rounded(fill,3)
+            local knob=Instance.new("Frame")
+            knob.AnchorPoint=Vector2.new(.5,.5)
+            knob.Size=UDim2.fromOffset(10,16)
+            knob.BackgroundColor3=Color3.fromRGB(242,242,245)
+            knob.BorderSizePixel=0
+            knob.ZIndex=105
+            knob.Parent=bar
+            rounded(knob,5)
+            local val=Instance.new("TextLabel")
+            val.AnchorPoint=Vector2.new(1,.5)
+            val.Position=UDim2.new(1,-7,.5,0)
+            val.Size=UDim2.fromOffset(44,20)
+            val.BackgroundColor3=Color3.fromRGB(35,36,43)
+            val.BorderSizePixel=0
+            val.Font=Enum.Font.Code
+            val.TextSize=9
+            val.TextColor3=Color3.fromRGB(220,220,228)
+            val.ZIndex=104
+            val.Parent=row
+            rounded(val,3)
+
+            local initial=tonumber(get()) or min
+            local fractional=(max-min)<=2 or math.abs(initial-math.floor(initial))>.001
+            local step=fractional and .01 or 1
+            local dragging=false
+            local function paint()
+                local n=math.clamp(tonumber(get()) or min,min,max)
+                local a=(n-min)/math.max(max-min,1e-6)
+                fill.Size=UDim2.new(a,0,1,0)
+                knob.Position=UDim2.new(a,0,.5,0)
+                val.Text=fractional and string.format("%.2f",n) or tostring(math.floor(n+.5))
+            end
+            local function fromX(x)
+                local a=math.clamp((x-bar.AbsolutePosition.X)/math.max(1,bar.AbsoluteSize.X),0,1)
+                local n=min+(max-min)*a
+                n=math.floor(n/step+.5)*step
+                set(math.clamp(n,min,max))
+                paint()
+            end
+            bar.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; fromX(i.Position.X) end end)
+            knob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; fromX(i.Position.X) end end)
+            UIS.InputChanged:Connect(function(i) if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then fromX(i.Position.X) end end)
+            UIS.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+            paint()
+        end
+
+        local function addToggle(label,get,set)
+            local row,l=addBaseRow(label)
+            l.Size=UDim2.new(1,-50,1,0)
+            local t=Instance.new("TextButton")
+            t.AnchorPoint=Vector2.new(1,.5)
+            t.Position=UDim2.new(1,-7,.5,0)
+            t.Size=UDim2.fromOffset(34,18)
+            t.Text=""
+            t.BorderSizePixel=0
+            t.AutoButtonColor=false
+            t.ZIndex=103
+            t.Parent=row
+            rounded(t,3)
+            local function paint() t.BackgroundColor3=get() and UI.Accent or Color3.fromRGB(48,49,57) end
+            t.MouseButton1Click:Connect(function() set(not get()); paint() end)
+            paint()
+        end
+
+        local function addDropdown(label,values,get,set)
+            local row,l=addBaseRow(label)
+            l.Size=UDim2.new(1,-96,1,0)
+            local d=Instance.new("TextButton")
+            d.AnchorPoint=Vector2.new(1,.5)
+            d.Position=UDim2.new(1,-7,.5,0)
+            d.Size=UDim2.fromOffset(82,20)
+            d.BackgroundColor3=Color3.fromRGB(37,38,46)
+            d.BorderSizePixel=0
+            d.Font=Enum.Font.SourceSans
+            d.TextSize=11
+            d.TextColor3=Color3.fromRGB(225,225,232)
+            d.ZIndex=103
+            d.Parent=row
+            rounded(d,3)
+            local function paint() d.Text=tostring(get()) end
+            d.MouseButton1Click:Connect(function()
+                local i=table.find(values,get()) or 0
+                set(values[i%#values+1])
+                paint()
+            end)
+            paint()
+        end
+
+        activePanel=panel
+        activeFeature=feature.id
+        keyButton=b
+        refreshKeyButton()
+        b.MouseButton1Click:Connect(function() listening=feature.id; refreshKeyButton() end)
+
+        if feature.id=="Aimbot" then
+            addSlider("Smoothness",function() return State.Combat.AimbotSmoothness or .32 end,function(v) State.Combat.AimbotSmoothness=v end,.05,1)
+            addSlider("FOV Radius",function() return State.Combat.AimFOV or 180 end,function(v) State.Combat.AimFOV=v end,20,800)
+            addDropdown("Aim Part",{"Head","Torso"},function() return State.Combat.AimPart or "Head" end,function(v) State.Combat.AimPart=v end)
+            addToggle("Wall Check",function() return State.Combat.WallCheck==true end,function(v) State.Combat.WallCheck=v end)
+        elseif feature.id=="SilentAim" then
+            addSlider("FOV Radius",function() return State.Combat.AimFOV or 180 end,function(v) State.Combat.AimFOV=v end,20,800)
+            addDropdown("Aim Part",{"Head","Torso"},function() return State.Combat.AimPart or "Head" end,function(v) State.Combat.AimPart=v end)
+            addToggle("Wall Check",function() return State.Combat.WallCheck==true end,function(v) State.Combat.WallCheck=v end)
+        elseif feature.id=="MagicBullets" then
+            addSlider("FOV Radius",function() return State.Combat.AimFOV or 180 end,function(v) State.Combat.AimFOV=v end,20,800)
+            addDropdown("Aim Part",{"Head","Torso"},function() return State.Combat.AimPart or "Head" end,function(v) State.Combat.AimPart=v end)
+            addToggle("Through Walls",function() return State.Combat.MagicThroughWalls==true end,function(v) State.Combat.MagicThroughWalls=v end)
+        elseif feature.id=="HitBoxes" then
+            addSlider("HitBox Size",function() return State.Combat.HitboxSize or 6 end,function(v) State.Combat.HitboxSize=v end,2,20)
+        elseif feature.id=="Fly" then
+            addSlider("Fly Speed",function() return State.Movement.FlySpeed or 65 end,function(v) State.Movement.FlySpeed=v end,10,200)
+        elseif feature.id=="Speed" then
+            addSlider("WalkSpeed",function() return State.Movement.SpeedValue or 32 end,function(v) State.Movement.SpeedValue=v end,16,150)
+        elseif feature.id=="CarFly" then
+            addSlider("CarFly Speed",function() return State.Movement.CarFlySpeed or 90 end,function(v) State.Movement.CarFlySpeed=v end,20,250)
+        end
+
         local clear=Instance.new("TextButton")
-        clear.Position=UDim2.fromOffset(7,76)
+        clear.Position=UDim2.fromOffset(7,y)
         clear.Size=UDim2.new(1,-14,0,25)
         clear.BackgroundColor3=Color3.fromRGB(31,32,38)
         clear.BorderSizePixel=0
@@ -159,21 +302,11 @@ return function(State, Registry, UI)
         clear.ZIndex=101
         clear.Parent=panel
         rounded(clear,4)
+        y+=30
+        clear.MouseButton1Click:Connect(function() K[feature.id]=nil; listening=nil; refreshKeyButton() end)
 
-        activePanel=panel
-        activeFeature=feature.id
-        keyButton=b
-        refreshKeyButton()
+        panel.Size=UDim2.fromOffset(236,y+3)
 
-        b.MouseButton1Click:Connect(function()
-            listening=feature.id
-            refreshKeyButton()
-        end)
-        clear.MouseButton1Click:Connect(function()
-            K[feature.id]=nil
-            listening=nil
-            refreshKeyButton()
-        end)
         close.MouseButton1Click:Connect(function()
             listening=nil
             if UI.CloseDockedPanel then UI.CloseDockedPanel(panel) else panel:Destroy() end
@@ -227,8 +360,6 @@ return function(State, Registry, UI)
             return
         end
 
-        -- Game systems may mark Q/E/Shift/etc. as processed. Feature keybinds are
-        -- still allowed unless the user is actively typing into a TextBox.
         if UIS:GetFocusedTextBox() then return end
 
         for _,feature in ipairs(features) do
