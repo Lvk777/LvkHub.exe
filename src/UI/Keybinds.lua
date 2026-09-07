@@ -30,6 +30,35 @@ return function(State, Registry, UI)
         {id="CarFly",page="Vehicle",label="CarFly",get=function() return State.Movement.CarFly end,set=function(v) State.Movement.CarFly=v end},
     }
 
+    local function rowByLabel(page,labelText)
+        if not page then return nil end
+        for _,child in ipairs(page:GetChildren()) do
+            if child:IsA("Frame") then
+                for _,d in ipairs(child:GetChildren()) do
+                    if d:IsA("TextLabel") and d.Text==labelText then return child,d end
+                end
+            end
+        end
+        return nil
+    end
+
+    local function repaint(feature)
+        local row=rowByLabel(UI.Pages[feature.page],feature.label)
+        if not row then return end
+        local toggle=nil
+        for _,d in ipairs(row:GetChildren()) do
+            if d:IsA("TextButton") and d.Name~="LvkKeybindDots" and d:FindFirstChildWhichIsA("Frame") then
+                toggle=d
+                break
+            end
+        end
+        if not toggle then return end
+        local on=feature.get()==true
+        toggle.BackgroundColor3=on and UI.Accent or Color3.fromRGB(45,45,45)
+        local mark=toggle:FindFirstChildWhichIsA("Frame")
+        if mark then mark.BackgroundColor3=on and Color3.fromRGB(235,235,235) or Color3.fromRGB(86,86,86) end
+    end
+
     local function keyName(id)
         local key=K[id]
         return key and key.Name or "NONE"
@@ -153,18 +182,6 @@ return function(State, Registry, UI)
         if UI.OpenDockedPanel then UI.OpenDockedPanel(panel) else panel.Parent=UI.Gui end
     end
 
-    local function rowByLabel(page,labelText)
-        if not page then return nil end
-        for _,child in ipairs(page:GetChildren()) do
-            if child:IsA("Frame") then
-                for _,d in ipairs(child:GetChildren()) do
-                    if d:IsA("TextLabel") and d.Text==labelText then return child,d end
-                end
-            end
-        end
-        return nil
-    end
-
     local function addDots(feature)
         local page=UI.Pages[feature.page]
         local row,label=rowByLabel(page,feature.label)
@@ -187,12 +204,8 @@ return function(State, Registry, UI)
         dots.MouseButton1Click:Connect(function() openFeatureMenu(feature) end)
     end
 
-    task.defer(function()
-        for _,feature in ipairs(features) do addDots(feature) end
-    end)
-    task.delay(.5,function()
-        for _,feature in ipairs(features) do addDots(feature) end
-    end)
+    task.defer(function() for _,feature in ipairs(features) do addDots(feature) end end)
+    task.delay(.5,function() for _,feature in ipairs(features) do addDots(feature) end end)
 
     UIS.InputBegan:Connect(function(input,processed)
         if input.UserInputType~=Enum.UserInputType.Keyboard then return end
@@ -224,6 +237,7 @@ return function(State, Registry, UI)
                 else
                     feature.set(nextValue)
                 end
+                repaint(feature)
                 break
             end
         end
