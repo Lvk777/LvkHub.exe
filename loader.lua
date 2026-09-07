@@ -60,7 +60,7 @@ local ok,err=pcall(function()
     loadModule("src/Movement/MainV2.lua")(State,Registry,UI)
 
     loadModule("src/Visuals/UnifiedTestVisualsV5.lua")(State,Registry,UI)
-    loadModule("src/Visuals/PreviewPolishV2.lua")(State,Registry,UI)
+    loadModule("src/Visuals/DummyPreviewV6.lua")(State,Registry,UI)
     loadModule("src/Visuals/PracticeOverlay.lua")(State,Registry,UI)
 
     loadModule("src/Vehicle/Main.lua")(State,Registry,UI)
