@@ -21,13 +21,16 @@ end
 
 local ok,err=pcall(function()
     local State=loadModule("src/Core/State.lua")
-    local Registry=loadModule("src/Core/Registry.lua")
+    local Registry=loadModule("src/Core/RegistryV2.lua")
     loadModule("src/Core/RegistryBootstrap.lua")(Registry)
 
     local MakeUI=loadModule("src/UI/Main.lua")
     local UI=MakeUI(State)
 
-    loadModule("src/Combat/Main.lua")(State,Registry,UI)
+    -- Combat V2 has no legacy GunPlugin adapter. WeaponSystem redirection is
+    -- handled separately and only against local Workspace.TestPlayers dummies.
+    loadModule("src/Combat/MainV2.lua")(State,Registry,UI)
+    loadModule("src/Combat/WeaponSystemDummyAdapter.lua")(State,Registry,UI)
     loadModule("src/Movement/Main.lua")(State,Registry,UI)
 
     -- One owner for every TestPlayers visual. Do not load the old Main/Chams/
