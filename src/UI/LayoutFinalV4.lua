@@ -20,7 +20,8 @@ return function(State, UI)
     local function apply()
         local v=vp()
         local margin=14
-        local reserve=236
+        -- Preview is 254 px wide; reserve enough room for it and Target Info.
+        local reserve=260
         local targetGap=10
         local gaps=10
         local available=v.X-margin*2-reserve-targetGap-gaps*(#order-1)
@@ -76,7 +77,6 @@ return function(State, UI)
         apply()
     end)
 
-    -- Keep category WIDTH responsive if the viewport changes, but never continuously rewrite positions.
     local cam=Workspace.CurrentCamera
     if cam then
         cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
