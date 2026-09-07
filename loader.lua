@@ -78,6 +78,8 @@ local ok,err=pcall(function()
     loadModule("src/UI/Keybinds.lua")(State,Registry,UI)
     loadModule("src/UI/DummyTargetInfo.lua")(State,Registry,UI)
     loadModule("src/UI/LayoutPolishV2.lua")(State,UI)
+    loadModule("src/UI/CompactLabels.lua")(State,UI)
+    loadModule("src/UI/FOVBorderPolish.lua")(State,UI)
 
     loadModule("src/Core/YokaiPolish.lua")(UI)
     loadModule("src/Core/YokaiBlueTheme.lua")(UI)
