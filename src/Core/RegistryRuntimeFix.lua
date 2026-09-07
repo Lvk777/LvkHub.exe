@@ -1,5 +1,5 @@
--- Runtime repair for the local TestPlayers registry.
--- Keeps target eligibility dummy-only and rebuilds the weak target index reliably.
+-- Runtime target-index repair.
+-- Target authorization and candidate enumeration are delegated to the loaded policy.
 return function(Registry)
     local Workspace=game:GetService("Workspace")
     local Policy=shared.LvkHubTargetRestrictions
@@ -8,15 +8,13 @@ return function(Registry)
 
     local function policyReady()
         return type(Policy)=="table"
-            and Policy.Mode=="TEST_DUMMIES_ONLY"
             and type(Policy.IsAllowedTarget)=="function"
-            and type(Policy.IsRealPlayerCharacter)=="function"
+            and type(Policy.GetCandidates)=="function"
     end
 
-    -- RegistryV2 previously used `return ok and result==true or true`, which
-    -- evaluates to true even when the policy correctly returns false.
     function Registry.IsRealPlayerCharacter(model)
         if not policyReady() then return true end
+        if type(Policy.IsRealPlayerCharacter)~="function" then return true end
         local ok,result=pcall(Policy.IsRealPlayerCharacter,model)
         if not ok then return true end
         return result==true
@@ -28,6 +26,10 @@ return function(Registry)
         return ok and result==true
     end
 
+    function Registry.PracticeAllowed()
+        return policyReady()
+    end
+
     local function valid(model)
         if not model or not model:IsA("Model") then return false end
         if not Registry.TargetAllowed(model) then return false end
@@ -36,12 +38,17 @@ return function(Registry)
         return hum~=nil and root~=nil and hum.Health>0
     end
 
+    local function candidates()
+        if not policyReady() then return {} end
+        local ok,list=pcall(Policy.GetCandidates)
+        if not ok or type(list)~="table" then return {} end
+        return list
+    end
+
     function Registry.RebuildTargetIndex()
         table.clear(Registry.Bots)
-        local folder=Workspace:FindFirstChild("TestPlayers")
-        if not folder then return 0 end
         local n=0
-        for _,model in ipairs(folder:GetChildren()) do
+        for _,model in ipairs(candidates()) do
             if valid(model) then
                 Registry.Bots[model]=true
                 n+=1
@@ -52,6 +59,8 @@ return function(Registry)
 
     local originalRefresh=Registry.RefreshTargets
     function Registry.RefreshTargets()
+        -- Keep the existing local-dummy synchronization step, then let policy alone
+        -- decide which resulting models are legal target candidates.
         if type(originalRefresh)=="function" then pcall(originalRefresh) end
         return Registry.RebuildTargetIndex()
     end
@@ -71,24 +80,37 @@ return function(Registry)
         return n
     end
 
-    local function bindFolder(folder)
-        if not folder then return end
-        folder.ChildAdded:Connect(function() task.defer(Registry.RebuildTargetIndex) end)
-        folder.ChildRemoved:Connect(function() task.defer(Registry.RebuildTargetIndex) end)
+    local watched=setmetatable({}, {__mode="k"})
+    local function bindRoot(root)
+        if not root or watched[root] then return end
+        watched[root]=true
+        root.ChildAdded:Connect(function() task.defer(Registry.RebuildTargetIndex) end)
+        root.ChildRemoved:Connect(function() task.defer(Registry.RebuildTargetIndex) end)
     end
 
-    bindFolder(Workspace:FindFirstChild("TestPlayers"))
-    Workspace.ChildAdded:Connect(function(child)
-        if child.Name=="TestPlayers" then
-            bindFolder(child)
-            task.defer(Registry.RebuildTargetIndex)
-        end
+    local function bindPolicyRoots()
+        if not policyReady() or type(Policy.GetWatchRoots)~="function" then return end
+        local ok,roots=pcall(Policy.GetWatchRoots)
+        if not ok or type(roots)~="table" then return end
+        for _,root in ipairs(roots) do bindRoot(root) end
+    end
+
+    Workspace.ChildAdded:Connect(function()
+        task.defer(function()
+            bindPolicyRoots()
+            Registry.RebuildTargetIndex()
+        end)
+    end)
+    Workspace.ChildRemoved:Connect(function()
+        task.defer(Registry.RebuildTargetIndex)
     end)
 
+    bindPolicyRoots()
     Registry.RefreshTargets()
     task.spawn(function()
         for _,delay in ipairs({0.10,0.30,0.70,1.30,2.20}) do
             task.wait(delay)
+            bindPolicyRoots()
             Registry.RefreshTargets()
         end
     end)
