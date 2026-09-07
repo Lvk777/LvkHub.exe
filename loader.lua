@@ -59,16 +59,14 @@ local ok,err=pcall(function()
 
     loadModule("src/Movement/MainV2.lua")(State,Registry,UI)
 
-    loadModule("src/Visuals/UnifiedTestVisualsV4.lua")(State,Registry,UI)
-    loadModule("src/Visuals/PreviewV4CameraFix.lua")(UI)
+    loadModule("src/Visuals/UnifiedTestVisualsV5.lua")(State,Registry,UI)
     loadModule("src/Visuals/PreviewPolishV2.lua")(State,Registry,UI)
     loadModule("src/Visuals/PracticeOverlay.lua")(State,Registry,UI)
-    loadModule("src/UI/VisualPopupDock.lua")(State,UI)
-    loadModule("src/UI/VisualTransparency.lua")(State,Registry,UI)
 
     loadModule("src/Vehicle/Main.lua")(State,Registry,UI)
 
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
+    loadModule("src/Utility/SoloSurvival.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
     loadModule("src/Local/MainV3.lua")(State,Registry,UI)
     loadModule("src/Local/ConfirmedHitSound.lua")(State)
@@ -78,7 +76,6 @@ local ok,err=pcall(function()
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
 
     loadModule("src/UI/Keybinds.lua")(State,Registry,UI)
-    loadModule("src/UI/CombatLayoutPolish.lua")(State,UI)
     loadModule("src/UI/DummyTargetInfo.lua")(State,Registry,UI)
     loadModule("src/UI/LayoutPolishV2.lua")(State,UI)
 
