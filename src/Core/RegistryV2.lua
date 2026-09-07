@@ -1,7 +1,6 @@
 -- LvkHub.exe Registry V2
--- Local practice dummies only. Target eligibility is delegated to
--- src/Core/TargetRestrictions.lua and fails closed if that policy is absent.
--- Inventory Viewer reads only a snapshot stored inside each local dummy clone.
+-- Target eligibility and target candidate enumeration are delegated to
+-- src/Restrictions/Policy.lua. Inventory Viewer reads only a local clone snapshot.
 
 local Players=game:GetService("Players")
 local Workspace=game:GetService("Workspace")
@@ -26,9 +25,8 @@ end
 
 local function policyReady()
     return type(Policy)=="table"
-        and Policy.Mode=="TEST_DUMMIES_ONLY"
         and type(Policy.IsAllowedTarget)=="function"
-        and type(Policy.IsRealPlayerCharacter)=="function"
+        and type(Policy.GetCandidates)=="function"
 end
 
 function Registry.PracticeAllowed()
@@ -36,22 +34,22 @@ function Registry.PracticeAllowed()
 end
 
 function Registry.IsRealPlayerCharacter(model)
-    if not policyReady() then
-        -- FAIL CLOSED: without policy, treat every candidate as unsafe.
+    if not policyReady() or type(Policy.IsRealPlayerCharacter)~="function" then
         return true
     end
     local ok,result=pcall(Policy.IsRealPlayerCharacter,model)
-    return ok and result==true or true
+    if not ok then return true end
+    return result==true
 end
 
 function Registry.TargetAllowed(model)
     if not policyReady() then return false end
     local ok,result=pcall(Policy.IsAllowedTarget,model)
-    return ok and result==true or false
+    return ok and result==true
 end
 
 function Registry.TargetPolicyStatus(model)
-    if not policyReady() then return false,"target policy missing: fail closed" end
+    if not policyReady() then return false,"target policy missing: deny all" end
     if type(Policy.Describe)=="function" then
         local ok,a,b=pcall(Policy.Describe,model)
         if ok then return a,b end
@@ -148,10 +146,9 @@ local function placement(index)
 end
 
 local function cloneRig(source,index)
-    if policyReady() and type(Policy.CanCloneSource)=="function" then
-        local ok,can=pcall(Policy.CanCloneSource,source)
-        if not ok or not can then return nil end
-    end
+    if not policyReady() or type(Policy.CanCloneSource)~="function" then return nil end
+    local okCan,can=pcall(Policy.CanCloneSource,source)
+    if not okCan or not can then return nil end
 
     local old=source.Archivable
     source.Archivable=true
@@ -210,12 +207,16 @@ local function syncClones()
     syncing=false
 end
 
+local function policyCandidates()
+    if not policyReady() then return {} end
+    local ok,list=pcall(Policy.GetCandidates)
+    if not ok or type(list)~="table" then return {} end
+    return list
+end
+
 local function rebuildBots()
     table.clear(Registry.Bots)
-    if not policyReady() then return end
-
-    local folder=ensureTestFolder()
-    for _,m in ipairs(folder:GetChildren()) do
+    for _,m in ipairs(policyCandidates()) do
         if validRig(m) and Registry.TargetAllowed(m) then
             local hum=Registry.HumanoidOf(m)
             if hum and hum.Health>0 then Registry.Bots[m]=true end
@@ -293,10 +294,12 @@ function Registry.Refresh()
 
     table.insert(Registry._connections,Workspace.ChildAdded:Connect(function(child)
         if child.Name=="Players" then task.defer(Registry.Refresh)
-        elseif child.Name=="Vehicles" then task.defer(rescanVehicles) end
+        elseif child.Name=="Vehicles" then task.defer(rescanVehicles)
+        else task.defer(rebuildBots) end
     end))
     table.insert(Registry._connections,Workspace.ChildRemoved:Connect(function(child)
         if child==Registry.VehicleFolder then Registry.VehicleFolder=nil; table.clear(Registry.Vehicles) end
+        task.defer(rebuildBots)
     end))
 
     table.insert(Registry._connections,Players.PlayerAdded:Connect(function() task.defer(Registry.RefreshTargets) end))
