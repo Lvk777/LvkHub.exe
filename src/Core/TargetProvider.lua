@@ -22,14 +22,19 @@ return function(Registry, TargetPolicy)
             and type(TargetPolicy.IsRealPlayerCharacter)=="function"
     end
 
-    local function candidateValid(model)
+    local function authorizedCandidate(model)
         if not policyReady() then return false end
         if not Registry or type(Registry.IsCandidate)~="function" or not Registry.IsCandidate(model) then return false end
         local hum=Registry.HumanoidOf and Registry.HumanoidOf(model)
         local root=Registry.RootOf and Registry.RootOf(model)
-        if not hum or not root or hum.Health<=0 then return false end
+        if not hum or not root then return false end
         local ok,allowed=pcall(TargetPolicy.IsAllowedTarget,model)
         return ok and allowed==true
+    end
+
+    local function alive(model)
+        local hum=Registry and Registry.HumanoidOf and Registry.HumanoidOf(model)
+        return hum~=nil and hum.Health>0
     end
 
     function Provider.Rebuild()
@@ -37,9 +42,9 @@ return function(Registry, TargetPolicy)
         if not policyReady() or not Registry or type(Registry.GetCandidates)~="function" then return 0 end
         local n=0
         for _,model in ipairs(Registry.GetCandidates()) do
-            if candidateValid(model) then
+            if authorizedCandidate(model) then
                 Provider.Targets[model]=true
-                n+=1
+                if alive(model) then n+=1 end
             end
         end
         Provider.VehicleFolder=Registry.VehicleFolder
@@ -60,7 +65,8 @@ return function(Registry, TargetPolicy)
     function Provider.GetTargets()
         local out={}
         for model in pairs(Provider.Targets) do
-            if Provider.IsTarget(model) then table.insert(out,model) end
+            if Provider.IsTarget(model) then table.insert(out,model)
+            elseif not authorizedCandidate(model) then Provider.Targets[model]=nil end
         end
         table.sort(out,function(a,b) return string.lower(a.Name)<string.lower(b.Name) end)
         return out
@@ -70,13 +76,18 @@ return function(Registry, TargetPolicy)
         return model~=nil
             and Provider.Targets[model]==true
             and model:IsDescendantOf(Workspace)
-            and candidateValid(model)
+            and authorizedCandidate(model)
+            and alive(model)
     end
 
     function Provider.CountTargets()
         local n=0
         for model in pairs(Provider.Targets) do
-            if Provider.IsTarget(model) then n+=1 else Provider.Targets[model]=nil end
+            if not authorizedCandidate(model) then
+                Provider.Targets[model]=nil
+            elseif alive(model) then
+                n+=1
+            end
         end
         return n
     end
@@ -114,7 +125,7 @@ return function(Registry, TargetPolicy)
     end
 
     function Provider.GetDummyInventory(model)
-        if not Provider.IsTarget(model) then return {"Empty","Empty","Empty","Empty"} end
+        if not authorizedCandidate(model) then return {"Empty","Empty","Empty","Empty"} end
         return Registry and Registry.GetDummyInventory and Registry.GetDummyInventory(model) or {"Empty","Empty","Empty","Empty"}
     end
 
