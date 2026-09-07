@@ -9,7 +9,10 @@ return function(State, Registry, UI)
     UI.Section(page,"Utility")
     UI.Toggle(page,"AntiAFK",function() return State.Utility.AntiAFK end,function(v) State.Utility.AntiAFK=v end)
 
-    UI.Button(page,"Rejoin current server","REJOIN",function(b)
+    local dangerColor=Color3.fromRGB(150,38,45)
+    local dangerText=Color3.fromRGB(255,238,240)
+
+    local rejoin=UI.Button(page,"Rejoin current server","REJOIN",function(b)
         b.Text="REJOINING..."
         local ok=pcall(function()
             if game.JobId~="" then TeleportService:TeleportToPlaceInstance(game.PlaceId,game.JobId,LP) else TeleportService:Teleport(game.PlaceId,LP) end
@@ -17,8 +20,10 @@ return function(State, Registry, UI)
         if not ok then pcall(function() TeleportService:Teleport(game.PlaceId,LP) end) end
         task.wait(1); b.Text="REJOIN"
     end)
+    rejoin.BackgroundColor3=dangerColor
+    rejoin.TextColor3=dangerText
 
-    UI.Button(page,"ServerHop","HOP",function(b)
+    local hop=UI.Button(page,"ServerHop","HOP",function(b)
         b.Text="SEARCHING..."
         local ok,body=pcall(function()
             return game:HttpGet(("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100"):format(game.PlaceId))
@@ -34,6 +39,8 @@ return function(State, Registry, UI)
         end
         task.wait(1); b.Text="HOP"
     end)
+    hop.BackgroundColor3=dangerColor
+    hop.TextColor3=dangerText
 
     LP.Idled:Connect(function()
         if not State.Utility.AntiAFK then return end
