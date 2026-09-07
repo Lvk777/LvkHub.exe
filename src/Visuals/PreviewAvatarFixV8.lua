@@ -94,7 +94,15 @@ return function(State, Registry, UI)
         if not world or not cam then return end
 
         local existing=world:FindFirstChild("LvkHubPreviewDummyV9")
-        if existing and existing:FindFirstChildWhichIsA("BasePart",true) then return end
+        if existing and existing:FindFirstChildWhichIsA("BasePart",true) then
+            -- DummyPreviewV6 may finish an async avatar request after this module.
+            -- Remove any late model so the preview remains deterministic.
+            for _,x in ipairs(world:GetChildren()) do
+                if x:IsA("Model") and x~=existing then pcall(function() x:Destroy() end) end
+            end
+            lastAttempt=os.clock()
+            return
+        end
 
         busy=true
         task.spawn(function()
@@ -135,7 +143,7 @@ return function(State, Registry, UI)
 
     task.delay(.25,install)
     RunService.Heartbeat:Connect(function()
-        if os.clock()-lastAttempt>1.2 then
+        if os.clock()-lastAttempt>1.0 then
             lastAttempt=os.clock()
             install()
         end
