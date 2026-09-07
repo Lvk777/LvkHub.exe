@@ -1,4 +1,4 @@
--- Vehicle-only controls. Car ESP rendering remains owned by UnifiedTestVisualsV4.
+-- Vehicle-only controls. Car ESP rendering is owned by UnifiedTestVisualsV5.
 return function(State, Registry, UI)
     local Players=game:GetService("Players")
     local RunService=game:GetService("RunService")
@@ -13,7 +13,7 @@ return function(State, Registry, UI)
     UI.Number(page,"CarFly Speed",function() return State.Movement.CarFlySpeed or 90 end,function(v) State.Movement.CarFlySpeed=v end,10,400)
     UI.Toggle(page,"Car ESP",function() return State.Visuals.CarESP end,function(v) State.Visuals.CarESP=v end)
 
-    local cfg=State.Visuals._V4Config
+    local cfg=State.Visuals._V5Config
     if cfg then
         local row,label=UI.Row(page,"Car ESP Color",38)
         label.Size=UDim2.fromOffset(78,38)
@@ -61,6 +61,8 @@ return function(State, Registry, UI)
         UIS.InputChanged:Connect(function(input) if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then setFromX(input.Position.X) end end)
         UIS.InputEnded:Connect(function(input) if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
         task.defer(sync)
+
+        UI.Number(page,"Car ESP Transparency",function() return cfg.CarTransparency or 84 end,function(v) cfg.CarTransparency=v end,0,100)
     end
 
     local function seatedVehicle()
@@ -101,16 +103,5 @@ return function(State, Registry, UI)
         if dir.Magnitude>0 then root.AssemblyLinearVelocity=dir*speed else root.AssemblyLinearVelocity=Vector3.zero end
         local flat=Vector3.new(cam.CFrame.LookVector.X,0,cam.CFrame.LookVector.Z)
         if flat.Magnitude>0 then pcall(function() root.CFrame=CFrame.lookAt(root.Position,root.Position+flat.Unit) end) end
-    end)
-
-    task.defer(function()
-        local visualPage=UI.Pages.Visuals
-        if not visualPage then return end
-        for _,row in ipairs(visualPage:GetChildren()) do
-            if row:IsA("Frame") then
-                local label2=row:FindFirstChildWhichIsA("TextLabel")
-                if label2 and label2.Text=="Car ESP" then row.Visible=false end
-            end
-        end
     end)
 end
