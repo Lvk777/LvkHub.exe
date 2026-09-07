@@ -9,7 +9,7 @@ return function(State, UI)
     frame.Name="LvkHubWatermark"
     frame.AnchorPoint=Vector2.new(.5,0)
     frame.Position=UDim2.new(.5,0,0,8)
-    frame.Size=UDim2.fromOffset(336,28)
+    frame.Size=UDim2.fromOffset(382,28)
     frame.BackgroundColor3=Color3.fromRGB(16,17,21)
     frame.BackgroundTransparency=.12
     frame.BorderSizePixel=0
@@ -36,7 +36,6 @@ return function(State, UI)
     local brand=spaced("LvkHub")
     local by=spaced("by").." "..spaced("Lvk")
 
-    -- Small beam that travels around the frame border.
     local glow=Instance.new("Frame")
     glow.AnchorPoint=Vector2.new(.5,.5);glow.Size=UDim2.fromOffset(24,6);glow.BackgroundColor3=UI.Accent;glow.BackgroundTransparency=.72;glow.BorderSizePixel=0;glow.ZIndex=301;glow.Parent=frame
     local gc=Instance.new("UICorner");gc.CornerRadius=UDim.new(1,0);gc.Parent=glow
