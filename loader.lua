@@ -157,7 +157,9 @@ local ok,err=pcall(function()
     loadModule("src/UI/DummyTargetInfo.lua")(State,Registry,UI)
     loadModule("src/UI/CompactLabels.lua")(State,UI)
     loadModule("src/UI/LocalPopupPolishV6.lua")(State,UI)
-    loadModule("src/UI/FOVThermalRingV3.lua")(State,UI)
+    -- Keep the original smooth CombatV4 FOV circle + its rotating animation.
+    -- FOVThermalRingV3 is intentionally not loaded because its segmented ring
+    -- can look pixelated at larger radii/resolutions.
     loadModule("src/UI/SoloSurvivalToLocal.lua")(State,UI)
 
     loadModule("src/Core/YokaiPolish.lua")(UI)
