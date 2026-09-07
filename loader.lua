@@ -20,9 +20,9 @@ end
 local ok,err=pcall(function()
     local State=loadModule("src/Core/State.lua")
 
-    -- Policy is the single source of target/session authorization. If the file is
-    -- missing or invalid, the hub still loads, but the fallback authorizes no
-    -- gameplay targets and no solo-only state modifications.
+    -- Policy is the normal source of target/session authorization.
+    -- If the file is missing, the hub keeps working in LOCAL TEST-DUMMY mode
+    -- instead of switching to real Player.Character targets.
     local Restrictions=nil
     local policyOK,policyResult=pcall(function()
         return loadModule("src/Restrictions/Policy.lua")
@@ -31,23 +31,82 @@ local ok,err=pcall(function()
         Restrictions=policyResult
     end
     if not Restrictions then
-        local EmptyTargets={
-            Mode="DENY_ALL",
-            IsAllowedTarget=function() return false end,
-            IsRealPlayerCharacter=function() return true end,
-            CanCloneSource=function() return false end,
-            GetCandidates=function() return {} end,
-            GetWatchRoots=function() return {} end,
-            Describe=function() return false,"restrictions missing: deny all" end,
+        local Players=game:GetService("Players")
+        local Workspace=game:GetService("Workspace")
+        local LP=Players.LocalPlayer
+
+        local LocalTargets={
+            Mode="TEST_DUMMIES_ONLY",
+            TargetFolderName="TestPlayers",
+            ManagedDummyAttribute="LvkHubManagedDummy",
         }
+
+        function LocalTargets.IsRealPlayerCharacter(model)
+            if not model or not model:IsA("Model") then return false end
+            local okPlayer,player=pcall(function() return Players:GetPlayerFromCharacter(model) end)
+            if okPlayer and player then return true end
+            for _,p in ipairs(Players:GetPlayers()) do
+                local ch=p.Character
+                if ch and (model==ch or model:IsDescendantOf(ch) or ch:IsDescendantOf(model)) then return true end
+            end
+            return false
+        end
+
+        function LocalTargets.IsAllowedTarget(model)
+            if not model or not model:IsA("Model") then return false end
+            local folder=Workspace:FindFirstChild(LocalTargets.TargetFolderName)
+            if not folder or not model:IsDescendantOf(folder) then return false end
+            if model:GetAttribute(LocalTargets.ManagedDummyAttribute)~=true then return false end
+            return not LocalTargets.IsRealPlayerCharacter(model)
+        end
+
+        function LocalTargets.CanCloneSource(model)
+            if not model or not model:IsA("Model") then return false end
+            local source=Workspace:FindFirstChild("Players")
+            return source~=nil and model:IsDescendantOf(source)
+        end
+
+        function LocalTargets.GetCandidates()
+            local out={}
+            local folder=Workspace:FindFirstChild(LocalTargets.TargetFolderName)
+            if folder then
+                for _,m in ipairs(folder:GetChildren()) do
+                    if LocalTargets.IsAllowedTarget(m) then table.insert(out,m) end
+                end
+            end
+            return out
+        end
+
+        function LocalTargets.GetWatchRoots()
+            local roots={}
+            local f=Workspace:FindFirstChild(LocalTargets.TargetFolderName)
+            if f then table.insert(roots,f) end
+            return roots
+        end
+
+        function LocalTargets.Describe(model)
+            if LocalTargets.IsAllowedTarget(model) then return true,"allowed local test dummy (fallback)" end
+            if LocalTargets.IsRealPlayerCharacter(model) then return false,"real Player.Character excluded" end
+            return false,"outside managed TestPlayers fallback"
+        end
+
         Restrictions={
-            Name="LvkHubRestrictionsFallback",
-            FailClosed=true,
-            Targets=EmptyTargets,
-            OtherPlayerCount=function() return math.huge end,
+            Name="LvkHubLocalPracticeFallback",
+            FailClosed=false,
+            Targets=LocalTargets,
+            OtherPlayerCount=function()
+                local n=0
+                for _,p in ipairs(Players:GetPlayers()) do if p~=LP then n+=1 end end
+                return n
+            end,
             SoloWeaponModsAllowed=function() return false end,
             VehicleBringAllowed=function() return false end,
-            RealPlayerInSeat=function() return true end,
+            RealPlayerInSeat=function(seat)
+                if not seat then return nil end
+                local okOcc,occupant=pcall(function() return seat.Occupant end)
+                if not okOcc or not occupant then return nil end
+                return Players:GetPlayerFromCharacter(occupant.Parent)
+            end,
         }
     end
     shared.LvkHubRestrictions=Restrictions
