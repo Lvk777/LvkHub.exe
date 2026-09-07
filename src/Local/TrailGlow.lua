@@ -1,6 +1,5 @@
 -- Yokai-style Trail glow layer.
--- Mirrors the old VisualsV4 glow: cloned Trail + BloomEffect.
-
+-- MainV4 owns the base Trail; this module owns only the optional glow copy/Bloom.
 return function(State, Registry, UI)
     local RunService=game:GetService("RunService")
     local Lighting=game:GetService("Lighting")
@@ -16,10 +15,10 @@ return function(State, Registry, UI)
     local function findTrail()
         local cam=Workspace.CurrentCamera
         if cam then
-            local t=cam:FindFirstChild("LvkHubTrail",true)
+            local t=cam:FindFirstChild("LvkHubTrailLocal",true)
             if t and t:IsA("Trail") then return t end
         end
-        local t=Workspace:FindFirstChild("LvkHubTrail",true)
+        local t=Workspace:FindFirstChild("LvkHubTrailLocal",true)
         if t and t:IsA("Trail") then return t end
         return nil
     end
@@ -63,7 +62,7 @@ return function(State, Registry, UI)
         if sourceTrail~=original or not glowCopy or not glowCopy.Parent then
             if glowCopy then pcall(function() glowCopy:Destroy() end) end
             glowCopy=original:Clone()
-            glowCopy.Name="YokaiTrailGlow"
+            glowCopy.Name="LvkHubTrailGlow"
             glowCopy.Parent=original.Parent
             sourceTrail=original
         end
@@ -81,8 +80,6 @@ return function(State, Registry, UI)
             NumberSequenceKeypoint.new(1,.92),
         })
         pcall(function() glowCopy.WidthScale=NumberSequence.new(1.7) end)
-        original.LightEmission=1
-        original.LightInfluence=0
     end
 
     local tick=0
