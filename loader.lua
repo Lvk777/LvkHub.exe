@@ -20,11 +20,7 @@ end
 local ok,err=pcall(function()
     local State=loadModule("src/Core/State.lua")
 
-    -- =====================================================================
-    -- CENTRALIZED RESTRICTIONS FOLDER
-    -- Fail-closed fallback: deleting/missing restrictions never enables real
-    -- Player.Character targeting and never enables solo-gated mutations.
-    -- =====================================================================
+    -- Centralized fail-closed restrictions.
     local Restrictions=nil
     local policyOK,policyResult=pcall(function()
         return loadModule("src/Restrictions/Policy.lua")
@@ -52,6 +48,7 @@ local ok,err=pcall(function()
 
     local Registry=loadModule("src/Core/RegistryV2.lua")
     loadModule("src/Core/RegistryBootstrap.lua")(Registry)
+    loadModule("src/Core/RegistryRuntimeFix.lua")(Registry)
 
     local MakeUI=loadModule("src/UI/Main.lua")
     local UI=MakeUI(State)
@@ -63,8 +60,6 @@ local ok,err=pcall(function()
 
     loadModule("src/Movement/MainV2.lua")(State,Registry,UI)
 
-    -- Unified dummy visuals. Vehicle renderer still lives here; its controls are
-    -- re-homed to the Vehicle window by src/Vehicle/Main.lua.
     loadModule("src/Visuals/UnifiedTestVisualsV4.lua")(State,Registry,UI)
     loadModule("src/Visuals/PreviewV4CameraFix.lua")(UI)
     loadModule("src/UI/VisualPopupDock.lua")(State,UI)
@@ -78,7 +73,7 @@ local ok,err=pcall(function()
     loadModule("src/Local/TrailGlow.lua")(State,Registry,UI)
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
 
-    loadModule("src/UI/Keybinds.lua")(State,UI)
+    loadModule("src/UI/Keybinds.lua")(State,Registry,UI)
     loadModule("src/UI/DummyTargetInfo.lua")(State,Registry,UI)
 
     loadModule("src/Core/YokaiPolish.lua")(UI)
