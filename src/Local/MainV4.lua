@@ -1,6 +1,6 @@
 -- LvkHub.exe Local V4
 -- SelfChams and GunChams are client-only Highlight overlays.
--- They never change Material, Color, Transparency, TextureID or other BasePart properties.
+-- HitSound playback is owned only by DummyHitSoundV2.lua to avoid duplicate sounds.
 return function(State, Registry, UI)
     local Players=game:GetService("Players")
     local RunService=game:GetService("RunService")
@@ -27,21 +27,6 @@ return function(State, Registry, UI)
     UI.Toggle(page,"SelfChams",function() return State.Local.SelfChams end,function(v) State.Local.SelfChams=v end)
     UI.Toggle(page,"GunChams",function() return State.Local.GunChams end,function(v) State.Local.GunChams=v end)
     UI.Toggle(page,"Trail",function() return State.Local.Trail end,function(v) State.Local.Trail=v end)
-
-    local sound=Instance.new("Sound")
-    sound.Name="LvkHubHitSoundV4"
-    sound.SoundId="rbxassetid://91546829095879"
-    sound.Volume=.75
-    sound.Parent=Camera or Workspace
-    shared.LvkHubPlayHitSound=function()
-        if not State.Local.HitSound then return end
-        local parent=Workspace.CurrentCamera or Workspace
-        if sound.Parent~=parent then sound.Parent=parent end
-        pcall(function()
-            sound.TimePosition=0
-            sound:Play()
-        end)
-    end
 
     local selfHighlight=nil
     local gunHighlights=setmetatable({}, {__mode="k"})
@@ -205,12 +190,11 @@ return function(State, Registry, UI)
             NumberSequenceKeypoint.new(0,width),
             NumberSequenceKeypoint.new(1,0),
         })
-        if State.Local.TrailGlow then trail.LightEmission=1 else trail.LightEmission=.15 end
+        trail.LightEmission=State.Local.TrailGlow and 1 or .15
     end
 
     Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
         Camera=Workspace.CurrentCamera
-        if Camera and sound.Parent~=Camera then sound.Parent=Camera end
         destroySelf()
         clearGun()
     end)
