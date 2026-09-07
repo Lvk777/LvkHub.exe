@@ -38,7 +38,7 @@ return function(State, Registry, UI)
         grad.Parent=bar
         local knob=Instance.new("Frame")
         knob.AnchorPoint=Vector2.new(.5,.5)
-        knob.Position=UDim2.new(0,.5,0)
+        knob.Position=UDim2.new(0,0,.5,0)
         knob.Size=UDim2.fromOffset(4,22)
         knob.BackgroundColor3=Color3.fromRGB(245,245,248)
         knob.BorderSizePixel=0
