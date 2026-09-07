@@ -27,20 +27,16 @@ local ok,err=pcall(function()
     local MakeUI=loadModule("src/UI/Main.lua")
     local UI=MakeUI(State)
 
-    -- Combat V2 has no legacy GunPlugin adapter. WeaponSystem redirection is
-    -- handled separately and only against local Workspace.TestPlayers dummies.
-    loadModule("src/Combat/MainV2.lua")(State,Registry,UI)
-    loadModule("src/Combat/WeaponSystemDummyAdapter.lua")(State,Registry,UI)
+    loadModule("src/Combat/MainV3.lua")(State,Registry,UI)
+    loadModule("src/Combat/WeaponSystemDummyAdapterV3.lua")(State,Registry,UI)
     loadModule("src/Movement/Main.lua")(State,Registry,UI)
 
-    -- One owner for every TestPlayers visual. Do not load the old Main/Chams/
-    -- CarESP stacks together because they create duplicate overlays/highlights.
-    loadModule("src/Visuals/UnifiedTestVisualsV3.lua")(State,Registry,UI)
-    loadModule("src/Visuals/PreviewCameraFix.lua")(UI)
+    -- Single TestPlayers renderer. V4 owns ESP/Chams/boxes/tracers/preview/CarESP.
+    loadModule("src/Visuals/UnifiedTestVisualsV4.lua")(State,Registry,UI)
 
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
-    loadModule("src/Local/Main.lua")(State,Registry,UI)
+    loadModule("src/Local/MainV2.lua")(State,Registry,UI)
     loadModule("src/Local/ConfirmedHitSound.lua")(State)
     loadModule("src/Local/TrailGlow.lua")(State,Registry,UI)
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
