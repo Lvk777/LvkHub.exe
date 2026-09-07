@@ -2,7 +2,6 @@
 return function(State, Registry, UI)
     local RunService=game:GetService("RunService")
     local Workspace=game:GetService("Workspace")
-    local UIS=game:GetService("UserInputService")
 
     State.Visuals.Snapline=State.Visuals.Snapline==true
     State.Visuals.CustomCrosshair=State.Visuals.CustomCrosshair==true
@@ -54,13 +53,18 @@ return function(State, Registry, UI)
         return nil,nil
     end
 
+    local function combatTargetActive()
+        return State.Combat and (State.Combat.Aimbot or State.Combat.SilentAim or State.Combat.MagicBullets or State.Combat.HitBoxes)
+    end
+
     RunService.RenderStepped:Connect(function()
         local cam=Workspace.CurrentCamera
         if not cam then return end
         local m,p=currentTarget()
+        local blue=combatTargetActive() and m~=nil
 
         if focusModel~=m then if focus then focus:Destroy(); focus=nil end; focusModel=m end
-        if m and Registry.IsBot(m) then
+        if blue and m and Registry.IsBot(m) then
             if not focus then focus=Instance.new("Highlight"); focus.Name="LvkHubPracticeTargetBlue"; focus.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; focus.FillTransparency=.84; focus.OutlineTransparency=0; focus.Parent=m end
             focus.Adornee=m; focus.FillColor=UI.Accent; focus.OutlineColor=UI.Accent; focus.Enabled=true
         elseif focus then focus.Enabled=false end
