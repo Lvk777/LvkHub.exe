@@ -1,6 +1,6 @@
--- Responsive aligned window placement + option-panel docking.
--- Category windows are positioned once and are not force-clamped every frame,
--- preventing the visible jumping while the user drags them upward.
+-- Responsive aligned window placement.
+-- Category windows are positioned once; option-panel positioning is owned only
+-- by UI/Enhancements.lua so draggable ••• panels never fight another loop.
 return function(State, UI)
     local RunService=game:GetService("RunService")
     local Workspace=game:GetService("Workspace")
@@ -51,7 +51,10 @@ return function(State, UI)
             if preview then
                 local px=target and target.AbsolutePosition.X or math.max(4,v.X-preview.AbsoluteSize.X-4)
                 local py=target and (target.AbsolutePosition.Y+target.AbsoluteSize.Y+8) or (vehicle.AbsolutePosition.Y+vehicle.AbsoluteSize.Y+8)
-                preview.Position=UDim2.fromOffset(math.max(4,math.min(px,v.X-preview.AbsoluteSize.X-4)),math.max(4,math.min(py,v.Y-preview.AbsoluteSize.Y-4)))
+                preview.Position=UDim2.fromOffset(
+                    math.max(4,math.min(px,v.X-preview.AbsoluteSize.X-4)),
+                    math.max(4,math.min(py,v.Y-preview.AbsoluteSize.Y-4))
+                )
             end
         end
     end
@@ -64,7 +67,10 @@ return function(State, UI)
         if not placed then
             local ready=true
             for _,name in ipairs(ordered) do
-                if name~="Vehicle" and not UI.Windows[name] then ready=false break end
+                if name~="Vehicle" and not UI.Windows[name] then
+                    ready=false
+                    break
+                end
             end
             if ready then
                 alignWindows()
@@ -72,20 +78,9 @@ return function(State, UI)
             end
         end
 
-        -- Every ••• panel opens in the free area directly below Movement.
-        local panel=UI.ActiveDockedPanel
-        local movement=UI.Windows.Movement
-        if panel and panel.Parent and movement then
-            local v=vp()
-            local x=math.clamp(movement.AbsolutePosition.X,4,math.max(4,v.X-panel.AbsoluteSize.X-4))
-            local y=movement.AbsolutePosition.Y+movement.AbsoluteSize.Y+12
-            if y+panel.AbsoluteSize.Y>v.Y-4 then
-                y=math.max(4,v.Y-panel.AbsoluteSize.Y-4)
-            end
-            panel.Position=UDim2.fromOffset(x,y)
-        end
+        -- Do NOT move UI.ActiveDockedPanel here. Enhancements places it once below
+        -- Combat and then leaves Position entirely under the user's drag control.
 
-        -- The synthetic preview follows main-menu visibility.
         local preview=UI.Gui:FindFirstChild("LvkHubVisualsDummyPreview")
         if preview and State.Visuals.Preview==true and UI.Main.Visible==false then
             preview.Visible=false
