@@ -61,6 +61,7 @@ local ok,err=pcall(function()
 
     loadModule("src/Visuals/UnifiedTestVisualsV5.lua")(State,Registry,UI)
     loadModule("src/Visuals/DummyPreviewV6.lua")(State,Registry,UI)
+    loadModule("src/Visuals/PreviewAvatarFixV7.lua")(State,Registry,UI)
     loadModule("src/Visuals/PracticeOverlay.lua")(State,Registry,UI)
 
     loadModule("src/Vehicle/Main.lua")(State,Registry,UI)
@@ -69,12 +70,10 @@ local ok,err=pcall(function()
     loadModule("src/Utility/SoloSurvival.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
     loadModule("src/Local/MainV3.lua")(State,Registry,UI)
-    loadModule("src/Local/ConfirmedHitSound.lua")(State)
-    loadModule("src/Local/HitSoundAsset.lua")(State,UI)
     loadModule("src/Local/MuteGunshots.lua")(State,Registry,UI)
-    loadModule("src/Local/BulletTracer.lua")(State,Registry,UI)
+    loadModule("src/Local/BulletTracerV2.lua")(State,Registry,UI)
     loadModule("src/UI/LocalOrderPolish.lua")(State,UI)
-    loadModule("src/Local/DummyHitSoundFallback.lua")(State,Registry,UI)
+    loadModule("src/Local/DummyHitSoundV2.lua")(State,Registry,UI)
     loadModule("src/Local/TrailGlow.lua")(State,Registry,UI)
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
 
@@ -86,6 +85,7 @@ local ok,err=pcall(function()
 
     loadModule("src/Core/YokaiPolish.lua")(UI)
     loadModule("src/Core/YokaiBlueTheme.lua")(UI)
+    loadModule("src/UI/Watermark.lua")(State,UI)
 
     shared.LvkHubExe={
         State=State,
