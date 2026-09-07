@@ -52,14 +52,21 @@ return function(State, UI)
             placed=true
         end
 
-        -- Keep the ••• settings panel visibly BELOW Utility. This callback is
-        -- registered after the base dock logic, so it wins the final position.
+        -- Dock every ••• panel below the visible bottom of Utility, with extra spacing.
         local panel=UI.ActiveDockedPanel
         if panel and panel.Parent and utility then
             local v=vp()
+            local utilityPage=UI.Pages.Utility
+            local bottom=utility.AbsolutePosition.Y+utility.AbsoluteSize.Y
+            if utilityPage and utilityPage.Visible then
+                bottom=math.max(bottom,utilityPage.AbsolutePosition.Y+utilityPage.AbsoluteSize.Y)
+            end
             local x=math.clamp(utility.AbsolutePosition.X,4,math.max(4,v.X-panel.AbsoluteSize.X-4))
-            local y=utility.AbsolutePosition.Y+utility.AbsoluteSize.Y+18
-            y=math.min(y,math.max(4,v.Y-panel.AbsoluteSize.Y-4))
+            local y=bottom+34
+            if y+panel.AbsoluteSize.Y>v.Y-4 then
+                -- Keep it below Utility whenever possible; otherwise use the lowest fully visible position.
+                y=math.max(bottom+8,v.Y-panel.AbsoluteSize.Y-4)
+            end
             panel.Position=UDim2.fromOffset(x,y)
         end
 
@@ -67,8 +74,8 @@ return function(State, UI)
         clampFrame(vehicle)
         clampFrame(target)
         clampFrame(preview)
+        clampFrame(UI.ActiveDockedPanel)
 
-        -- Preview follows the main menu visibility; Target Info has its own pin behavior.
         if preview and State.Visuals.Preview==true and UI.Main.Visible==false then preview.Visible=false end
     end)
 end
