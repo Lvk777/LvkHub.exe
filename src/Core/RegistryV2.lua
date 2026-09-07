@@ -104,7 +104,6 @@ local function inventorySnapshotFromClone(clone)
 end
 
 local function sanitizeClone(clone)
-    -- Snapshot first, then remove executable/tool objects from the practice clone.
     inventorySnapshotFromClone(clone)
     for _,d in ipairs(clone:GetDescendants()) do
         if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ModuleScript") then
@@ -155,20 +154,37 @@ local function syncClones()
     local folder=ensureTestFolder()
     local src=sourceFolder()
     local ordered={}
+    local wantedByName={}
     if src then
         for _,m in ipairs(src:GetChildren()) do
-            if validRig(m) then table.insert(ordered,m) end
+            if validRig(m) then
+                table.insert(ordered,m)
+                wantedByName[m.Name]=m
+            end
         end
     end
     table.sort(ordered,function(a,b) return string.lower(a.Name)<string.lower(b.Name) end)
 
-    -- Rebuild managed clones so the dummy snapshot never depends on a live source after creation.
+    local existingByName={}
     for _,m in ipairs(folder:GetChildren()) do
         if m:IsA("Model") and m:GetAttribute("LvkHubManagedDummy")==true then
-            m:Destroy()
+            local sourceName=m:GetAttribute("LvkHubSourceName")
+            if type(sourceName)=="string" and wantedByName[sourceName] and not existingByName[sourceName] then
+                existingByName[sourceName]=m
+            else
+                m:Destroy()
+            end
         end
     end
-    for i,m in ipairs(ordered) do cloneRig(m,i) end
+
+    for i,source in ipairs(ordered) do
+        local clone=existingByName[source.Name]
+        if not clone or not clone.Parent then
+            clone=cloneRig(source,i)
+            existingByName[source.Name]=clone
+        end
+    end
+
     syncing=false
 end
 
