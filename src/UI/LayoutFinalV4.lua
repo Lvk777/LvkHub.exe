@@ -1,10 +1,14 @@
 -- Final startup layout: evenly uses the available horizontal space.
 -- Order: Combat / Movement / Visuals / Vehicle / World / Local / Utility / Target Info.
 -- Preview is always placed below Target Info. After startup, everything remains draggable.
+-- The loader keeps the GUI hidden until UI.LayoutReady becomes true.
 return function(State, UI)
     local Workspace=game:GetService("Workspace")
+    local RunService=game:GetService("RunService")
 
     local order={"Combat","Movement","Visuals","Vehicle","World","Local","Utility"}
+    UI.LayoutReady=false
+
     local function vp()
         local cam=Workspace.CurrentCamera
         return cam and cam.ViewportSize or Vector2.new(1920,1080)
@@ -13,6 +17,7 @@ return function(State, UI)
     local function findTarget()
         return UI.Gui:FindFirstChild("LvkHubDummyTargetInfo")
     end
+
     local function findPreview()
         return UI.Gui:FindFirstChild("LvkHubVisualsDummyPreview")
     end
@@ -20,7 +25,6 @@ return function(State, UI)
     local function apply()
         local v=vp()
         local margin=14
-        -- Preview is 254 px wide; reserve enough room for it and Target Info.
         local reserve=260
         local targetGap=10
         local gaps=10
@@ -51,36 +55,56 @@ return function(State, UI)
         local preview=findPreview()
         local rightX=utility and (utility.AbsolutePosition.X+utility.AbsoluteSize.X+targetGap) or (v.X-reserve-margin)
         rightX=math.clamp(rightX,margin,math.max(margin,v.X-reserve-margin))
+
         if target then
             target.Position=UDim2.fromOffset(math.floor(rightX+.5),55)
         end
+
         if preview then
             local y=55+(target and target.AbsoluteSize.Y or 110)+10
             preview.Position=UDim2.fromOffset(math.floor(rightX+.5),math.floor(y+.5))
         end
     end
 
+    UI.ApplyFinalLayout=apply
+
+    -- Resolve all deferred row sizes/AutomaticCanvasSize while the loader still
+    -- has the ScreenGui hidden. No late startup repositioning happens after reveal.
     task.spawn(function()
-        local deadline=os.clock()+5
+        local deadline=os.clock()+2.5
         repeat
-            local ok=true
+            local ready=true
             for _,name in ipairs(order) do
                 local w=UI.Windows and UI.Windows[name]
-                if not w or w.AbsoluteSize.X<10 then ok=false break end
+                if not w or w.AbsoluteSize.X<10 then
+                    ready=false
+                    break
+                end
             end
-            if ok and findTarget() and findPreview() then break end
-            task.wait(.05)
+            if ready and findTarget() and findPreview() then break end
+            task.wait(.025)
         until os.clock()>deadline
-        task.wait(.65)
+
+        -- Give UIListLayout / AutomaticSize a couple of render passes to settle.
+        pcall(function() RunService.RenderStepped:Wait() end)
         apply()
-        task.wait(.35)
+        pcall(function() RunService.RenderStepped:Wait() end)
         apply()
+        UI.LayoutReady=true
     end)
 
-    local cam=Workspace.CurrentCamera
-    if cam then
+    local function bindCamera(cam)
+        if not cam then return end
         cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-            task.delay(.15,apply)
+            task.delay(.12,function()
+                apply()
+            end)
         end)
     end
+
+    bindCamera(Workspace.CurrentCamera)
+    Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        bindCamera(Workspace.CurrentCamera)
+        task.delay(.12,apply)
+    end)
 end
