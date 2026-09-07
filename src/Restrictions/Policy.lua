@@ -1,17 +1,21 @@
 -- LvkHub.exe centralized restrictions policy.
--- Single source of truth for target/session authorization.
+-- Responsibility: authorization only.
+-- Candidate discovery/indexing lives in RegistryV3 + TargetProvider.
+
 local Players=game:GetService("Players")
 local Workspace=game:GetService("Workspace")
 local LP=Players.LocalPlayer
 
 local Policy={
     Name="LvkHubRestrictions",
+    Version=2,
 }
 
 local Targets={
     Mode="TEST_DUMMIES_ONLY",
     TargetFolderName="TestPlayers",
     ManagedDummyAttribute="LvkHubManagedDummy",
+    CandidateKind="practice_dummy",
 }
 
 function Targets.IsRealPlayerCharacter(model)
@@ -20,52 +24,40 @@ function Targets.IsRealPlayerCharacter(model)
     if ok and p then return true end
     for _,plr in ipairs(Players:GetPlayers()) do
         local ch=plr.Character
-        if ch and (model==ch or model:IsDescendantOf(ch) or ch:IsDescendantOf(model)) then return true end
+        if ch and (model==ch or model:IsDescendantOf(ch) or ch:IsDescendantOf(model)) then
+            return true
+        end
     end
     return false
 end
 
-function Targets.IsAllowedTarget(model)
-    if not model or not model:IsA("Model") then return false end
-    local folder=Workspace:FindFirstChild(Targets.TargetFolderName)
-    if not folder or not model:IsDescendantOf(folder) then return false end
-    if model:GetAttribute(Targets.ManagedDummyAttribute)~=true then return false end
-    if Targets.IsRealPlayerCharacter(model) then return false end
-    return true
-end
-
--- Registry/visual/combat candidate enumeration comes from the policy too.
-function Targets.GetCandidates()
-    local out={}
-    local folder=Workspace:FindFirstChild(Targets.TargetFolderName)
-    if not folder then return out end
-    for _,model in ipairs(folder:GetChildren()) do
-        if Targets.IsAllowedTarget(model) then
-            table.insert(out,model)
-        end
-    end
-    return out
-end
-
--- Roots whose child changes should trigger a target-index refresh.
-function Targets.GetWatchRoots()
-    local roots={}
-    local folder=Workspace:FindFirstChild(Targets.TargetFolderName)
-    if folder then table.insert(roots,folder) end
-    return roots
-end
-
+-- Source authorization is intentionally separate from target authorization.
+-- RegistryV3 may clone an allowed source into a local managed practice candidate;
+-- the original source is never returned as a target by this policy.
 function Targets.CanCloneSource(model)
     if not model or not model:IsA("Model") then return false end
     local source=Workspace:FindFirstChild("Players")
     return source~=nil and model:IsDescendantOf(source)
 end
 
+function Targets.IsAllowedTarget(model)
+    if not model or not model:IsA("Model") then return false end
+    if Targets.IsRealPlayerCharacter(model) then return false end
+
+    local folder=Workspace:FindFirstChild(Targets.TargetFolderName)
+    if not folder or not model:IsDescendantOf(folder) then return false end
+    if model:GetAttribute(Targets.ManagedDummyAttribute)~=true then return false end
+
+    local kind=model:GetAttribute("LvkHubCandidateKind")
+    if kind~=nil and kind~=Targets.CandidateKind then return false end
+    return true
+end
+
 function Targets.Describe(model)
     if not model then return false,"nil target" end
     if Targets.IsRealPlayerCharacter(model) then return false,"real Player.Character excluded" end
-    if not Targets.IsAllowedTarget(model) then return false,"outside managed TestPlayers policy" end
-    return true,"allowed local test dummy"
+    if Targets.IsAllowedTarget(model) then return true,"authorized local practice target" end
+    return false,"candidate rejected by target policy"
 end
 
 Policy.Targets=Targets
