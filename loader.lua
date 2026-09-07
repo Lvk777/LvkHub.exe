@@ -73,7 +73,7 @@ local ok,err=pcall(function()
 
     loadModule("src/Utility/Main.lua")(State,Registry,UI)
     loadModule("src/Utility/Presets.lua")(State,Registry,UI)
-    loadModule("src/Utility/SoloSurvival.lua")(State,Registry,UI)
+    loadModule("src/Utility/SoloSurvivalV2.lua")(State,Registry,UI)
     loadModule("src/World/Main.lua")(State,Registry,UI)
 
     loadModule("src/Local/MainV4.lua")(State,Registry,UI)
@@ -85,6 +85,7 @@ local ok,err=pcall(function()
     loadModule("src/Local/DummyHitSoundV2.lua")(State,Registry,UI)
     loadModule("src/Local/TrailGlow.lua")(State,Registry,UI)
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
+    loadModule("src/Vehicle/VehicleStatusPolish.lua")(State,Registry,UI)
 
     loadModule("src/UI/Keybinds.lua")(State,Registry,UI)
     loadModule("src/UI/DummyTargetInfo.lua")(State,Registry,UI)
