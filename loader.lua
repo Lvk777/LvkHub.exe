@@ -61,7 +61,10 @@ local ok,err=pcall(function()
 
     loadModule("src/Visuals/UnifiedTestVisualsV4.lua")(State,Registry,UI)
     loadModule("src/Visuals/PreviewV4CameraFix.lua")(UI)
+    loadModule("src/Visuals/PreviewPolishV2.lua")(State,Registry,UI)
+    loadModule("src/Visuals/PracticeOverlay.lua")(State,Registry,UI)
     loadModule("src/UI/VisualPopupDock.lua")(State,UI)
+    loadModule("src/UI/VisualTransparency.lua")(State,Registry,UI)
 
     loadModule("src/Vehicle/Main.lua")(State,Registry,UI)
 
@@ -69,11 +72,15 @@ local ok,err=pcall(function()
     loadModule("src/World/Main.lua")(State,Registry,UI)
     loadModule("src/Local/MainV3.lua")(State,Registry,UI)
     loadModule("src/Local/ConfirmedHitSound.lua")(State)
+    loadModule("src/Local/HitSoundAsset.lua")(State,UI)
+    loadModule("src/Local/DummyHitSoundFallback.lua")(State,Registry,UI)
     loadModule("src/Local/TrailGlow.lua")(State,Registry,UI)
     loadModule("src/Local/BringCarStudio.lua")(Registry,UI)
 
     loadModule("src/UI/Keybinds.lua")(State,Registry,UI)
+    loadModule("src/UI/CombatLayoutPolish.lua")(State,UI)
     loadModule("src/UI/DummyTargetInfo.lua")(State,Registry,UI)
+    loadModule("src/UI/LayoutPolishV2.lua")(State,UI)
 
     loadModule("src/Core/YokaiPolish.lua")(UI)
     loadModule("src/Core/YokaiBlueTheme.lua")(UI)
