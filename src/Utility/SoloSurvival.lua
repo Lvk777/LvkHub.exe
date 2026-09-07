@@ -141,7 +141,7 @@ return function(State, Registry, UI)
             guard.Text="SURVIVAL GUARD: READY • only LocalPlayer"
             guard.TextColor3=Color3.fromRGB(80,225,125)
             apply()
-            if not State.Utility.FullHunger and not State.Utility.FullThirst and next(snapshots)~=nil then restoreAll() end
+            if not State.Utility.FullHunger and not State.Utility.FullThirst and (next(snapshots)~=nil or next(attrSnapshots)~=nil) then restoreAll() end
         else
             guard.Text="SURVIVAL GUARD: BLOCKED • another Player present"
             guard.TextColor3=Color3.fromRGB(245,80,80)
