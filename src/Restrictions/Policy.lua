@@ -1,5 +1,5 @@
 -- LvkHub.exe centralized restrictions policy.
--- This module is required by the loader and keeps target/session policy in one place.
+-- Single source of truth for target/session authorization.
 local Players=game:GetService("Players")
 local Workspace=game:GetService("Workspace")
 local LP=Players.LocalPlayer
@@ -32,6 +32,27 @@ function Targets.IsAllowedTarget(model)
     if model:GetAttribute(Targets.ManagedDummyAttribute)~=true then return false end
     if Targets.IsRealPlayerCharacter(model) then return false end
     return true
+end
+
+-- Registry/visual/combat candidate enumeration comes from the policy too.
+function Targets.GetCandidates()
+    local out={}
+    local folder=Workspace:FindFirstChild(Targets.TargetFolderName)
+    if not folder then return out end
+    for _,model in ipairs(folder:GetChildren()) do
+        if Targets.IsAllowedTarget(model) then
+            table.insert(out,model)
+        end
+    end
+    return out
+end
+
+-- Roots whose child changes should trigger a target-index refresh.
+function Targets.GetWatchRoots()
+    local roots={}
+    local folder=Workspace:FindFirstChild(Targets.TargetFolderName)
+    if folder then table.insert(roots,folder) end
+    return roots
 end
 
 function Targets.CanCloneSource(model)
