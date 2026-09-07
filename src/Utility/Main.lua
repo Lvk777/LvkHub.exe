@@ -3,13 +3,11 @@ return function(State, Registry, UI)
     local TeleportService=game:GetService("TeleportService")
     local HttpService=game:GetService("HttpService")
     local VirtualUser=game:GetService("VirtualUser")
-    local CoreGui=game:GetService("CoreGui")
     local LP=Players.LocalPlayer
     local page=UI.Pages.Utility
 
     UI.Section(page,"Utility")
     UI.Toggle(page,"AntiAFK",function() return State.Utility.AntiAFK end,function(v) State.Utility.AntiAFK=v end)
-    UI.Toggle(page,"NoMenuFog",function() return State.Utility.NoMenuFog end,function(v) State.Utility.NoMenuFog=v end)
 
     UI.Button(page,"Rejoin current server","REJOIN",function(b)
         b.Text="REJOINING..."
@@ -43,23 +41,5 @@ return function(State, Registry, UI)
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new(0,0))
         end)
-    end)
-
-    task.spawn(function()
-        while UI.Gui.Parent do
-            task.wait(.5)
-            if State.Utility.NoMenuFog then
-                for _,root in ipairs({CoreGui,LP:FindFirstChildOfClass("PlayerGui")}) do
-                    if root then
-                        for _,d in ipairs(root:GetDescendants()) do
-                            if d:IsA("BlurEffect") then d.Enabled=false end
-                        end
-                    end
-                end
-                for _,d in ipairs(game:GetService("Lighting"):GetChildren()) do
-                    if d:IsA("BlurEffect") then d.Enabled=false end
-                end
-            end
-        end
     end)
 end
