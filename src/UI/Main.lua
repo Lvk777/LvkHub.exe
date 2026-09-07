@@ -1,7 +1,6 @@
 -- LvkHub.exe UI shell
 -- Yokai-style independent draggable category windows, compact dark rows,
 -- blue/periwinkle accent, per-window collapse and RightShift visibility.
--- Only the requested categories are created: Combat, Movement, Visuals, Utility, World, Local.
 
 local UIS=game:GetService("UserInputService")
 local CoreGui=game:GetService("CoreGui")
@@ -299,9 +298,6 @@ return function(State)
             paint()
         end
 
-        -- One input path per clickable area. The previous implementation listened
-        -- on both the child button and its parent row, so one click could fire twice
-        -- and immediately return the state to OFF.
         b.MouseButton1Click:Connect(flip)
         t.InputBegan:Connect(function(input)
             if input.UserInputType==Enum.UserInputType.MouseButton1 then flip() end
@@ -310,29 +306,84 @@ return function(State)
         return f
     end
 
+    -- Numeric controls are sliders everywhere: drag right to increase, left to decrease.
     function UI.Number(page,label,get,set,min,max)
-        local f,t=UI.Row(page,label)
-        t.Size=UDim2.new(1,-82,1,0)
-        local box=Instance.new("TextBox")
-        box.AnchorPoint=Vector2.new(1,.5)
-        box.Position=UDim2.new(1,-7,.5,0)
-        box.Size=UDim2.fromOffset(66,20)
-        box.BackgroundColor3=Color3.fromRGB(32,32,32)
-        box.BorderSizePixel=0
-        box.ClearTextOnFocus=false
-        box.Font=Enum.Font.Code
-        box.TextSize=11
-        box.TextColor3=Color3.fromRGB(200,200,200)
-        box.Text=tostring(get())
-        box.Parent=f
-        local c=Instance.new("UICorner")
-        c.CornerRadius=UDim.new(0,3)
-        c.Parent=box
-        box.FocusLost:Connect(function()
-            local n=tonumber(box.Text)
-            if n then set(math.clamp(n,min,max)) end
-            box.Text=tostring(get())
+        local f,t=UI.Row(page,label,38)
+        t.Size=UDim2.fromOffset(82,38)
+
+        local bar=Instance.new("Frame")
+        bar.Position=UDim2.fromOffset(88,16)
+        bar.Size=UDim2.new(1,-142,0,6)
+        bar.BackgroundColor3=Color3.fromRGB(43,43,48)
+        bar.BorderSizePixel=0
+        bar.Active=true
+        bar.Parent=f
+        local bc=Instance.new("UICorner"); bc.CornerRadius=UDim.new(1,0); bc.Parent=bar
+
+        local fill=Instance.new("Frame")
+        fill.Size=UDim2.fromScale(0,1)
+        fill.BackgroundColor3=accent
+        fill.BorderSizePixel=0
+        fill.Parent=bar
+        local fc=Instance.new("UICorner"); fc.CornerRadius=UDim.new(1,0); fc.Parent=fill
+
+        local knob=Instance.new("Frame")
+        knob.AnchorPoint=Vector2.new(.5,.5)
+        knob.Position=UDim2.fromScale(0,.5)
+        knob.Size=UDim2.fromOffset(10,16)
+        knob.BackgroundColor3=Color3.fromRGB(238,238,242)
+        knob.BorderSizePixel=0
+        knob.Parent=bar
+        local kc=Instance.new("UICorner"); kc.CornerRadius=UDim.new(1,0); kc.Parent=knob
+        local ks=Instance.new("UIStroke"); ks.Color=Color3.fromRGB(22,22,27); ks.Transparency=.15; ks.Parent=knob
+
+        local value=Instance.new("TextLabel")
+        value.AnchorPoint=Vector2.new(1,.5)
+        value.Position=UDim2.new(1,-7,.5,0)
+        value.Size=UDim2.fromOffset(43,20)
+        value.BackgroundColor3=Color3.fromRGB(32,32,36)
+        value.BorderSizePixel=0
+        value.Font=Enum.Font.Code
+        value.TextSize=10
+        value.TextColor3=Color3.fromRGB(215,215,222)
+        value.Parent=f
+        local vc=Instance.new("UICorner"); vc.CornerRadius=UDim.new(0,3); vc.Parent=value
+
+        local initial=tonumber(get()) or min
+        local fractional=(max-min)<=2 or math.abs(initial-math.floor(initial))>.0001
+        local step=fractional and .01 or 1
+        local dragging=false
+
+        local function quantize(n)
+            n=math.clamp(n,min,max)
+            n=math.floor(n/step+.5)*step
+            return math.clamp(n,min,max)
+        end
+        local function paint()
+            local n=math.clamp(tonumber(get()) or min,min,max)
+            local a=(n-min)/math.max(max-min,1e-6)
+            fill.Size=UDim2.new(a,0,1,0)
+            knob.Position=UDim2.new(a,0,.5,0)
+            value.Text=fractional and string.format("%.2f",n) or tostring(math.floor(n+.5))
+        end
+        local function fromX(x)
+            local a=math.clamp((x-bar.AbsolutePosition.X)/math.max(1,bar.AbsoluteSize.X),0,1)
+            set(quantize(min+(max-min)*a))
+            paint()
+        end
+        bar.InputBegan:Connect(function(i)
+            if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; fromX(i.Position.X) end
         end)
+        knob.InputBegan:Connect(function(i)
+            if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; fromX(i.Position.X) end
+        end)
+        UIS.InputChanged:Connect(function(i)
+            if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then fromX(i.Position.X) end
+        end)
+        UIS.InputEnded:Connect(function(i)
+            if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end
+        end)
+        paint()
         return f
     end
 
